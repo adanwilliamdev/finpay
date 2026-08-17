@@ -53,7 +53,7 @@ O projeto utiliza autenticação JWT, PostgreSQL, Flyway, controle de concorrên
 ### 1. Clone o repositório
 
 ```bash
-git clone https://github.com/yourusername/finpay.git
+git clone https://github.com/adanwilliamdev/finpay.git
 cd finpay
 ```
 
