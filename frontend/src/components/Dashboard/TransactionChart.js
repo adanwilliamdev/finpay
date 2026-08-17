@@ -26,22 +26,24 @@ const TransactionChart = ({ data }) => {
   return (
     <ResponsiveContainer width="100%" height={300}>
       <LineChart data={data}>
-        <CartesianGrid strokeDasharray="3 3" />
-        <XAxis dataKey="date" />
+        <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
+        <XAxis dataKey="date" tick={{ fill: '#64748B', fontSize: 12 }} />
         <YAxis
           tickFormatter={(value) => formatCurrency(value)}
+          tick={{ fill: '#64748B', fontSize: 12 }}
         />
         <Tooltip
           formatter={(value) => formatCurrency(value)}
-          labelStyle={{ color: '#000' }}
+          labelStyle={{ color: '#0F172A' }}
+          contentStyle={{ borderRadius: 10, border: '1px solid #E2E8F0' }}
         />
         <Legend />
         <Line
           type="monotone"
           dataKey="amount"
-          stroke="#1976d2"
+          stroke="#2563EB"
           strokeWidth={2}
-          dot={{ fill: '#1976d2' }}
+          dot={{ fill: '#2563EB' }}
           activeDot={{ r: 8 }}
         />
       </LineChart>

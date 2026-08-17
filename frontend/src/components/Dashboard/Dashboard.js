@@ -7,19 +7,16 @@ import {
   Paper,
   Typography,
   Box,
-  Card,
-  CardContent,
-  CardHeader,
-  Avatar,
   Button,
   CircularProgress,
 } from '@mui/material';
 import {
-  AccountBalanceWallet,
-  TrendingUp,
-  TrendingDown,
-  SwapHoriz,
+  AccountBalanceWalletOutlined,
+  TrendingUpOutlined,
+  TrendingDownOutlined,
+  SwapHorizOutlined,
   Refresh,
+  ArrowForward,
 } from '@mui/icons-material';
 import BalanceCard from './BalanceCard';
 import TransactionChart from './TransactionChart';
@@ -65,97 +62,108 @@ const Dashboard = () => {
   if (loading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="60vh">
-        <CircularProgress />
+        <CircularProgress sx={{ color: '#2563EB' }} />
       </Box>
     );
   }
+
+  const deposits = balance?.totalDeposits || 0;
+  const withdrawals = balance?.totalWithdrawals || 0;
+  const movement = deposits + withdrawals;
+  const depositsShare = movement > 0 ? Math.round((deposits / movement) * 100) : null;
+  const withdrawalsShare = movement > 0 ? Math.round((withdrawals / movement) * 100) : null;
 
   const stats = [
     {
       title: 'Total Balance',
       value: balance?.totalBalance || 0,
-      icon: <AccountBalanceWallet />,
-      color: '#1976d2',
+      icon: <AccountBalanceWalletOutlined />,
+      color: '#2563EB',
+      maskable: true,
+      subtitle: { label: 'Available balance', value: balance?.totalBalance || 0 },
     },
     {
       title: 'Total Deposits',
-      value: balance?.totalDeposits || 0,
-      icon: <TrendingUp />,
-      color: '#2e7d32',
+      value: deposits,
+      icon: <TrendingUpOutlined />,
+      color: '#16A34A',
+      trend: depositsShare !== null
+        ? { direction: 'up', label: `${depositsShare}% of total movement` }
+        : null,
     },
     {
       title: 'Total Withdrawals',
-      value: balance?.totalWithdrawals || 0,
-      icon: <TrendingDown />,
-      color: '#d32f2f',
+      value: withdrawals,
+      icon: <TrendingDownOutlined />,
+      color: '#DC2626',
+      trend: withdrawalsShare !== null
+        ? { direction: 'down', label: `${withdrawalsShare}% of total movement` }
+        : null,
     },
     {
       title: 'Transactions',
       value: balance?.totalTransactions || 0,
-      icon: <SwapHoriz />,
-      color: '#9c27b0',
+      icon: <SwapHorizOutlined />,
+      color: '#7C3AED',
+      isCount: true,
     },
   ];
 
   return (
     <Box sx={{ flexGrow: 1 }}>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Typography variant="h4" gutterBottom>
-          Welcome back, {user?.fullName?.split(' ')[0] || 'User'}!
-        </Typography>
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3} flexWrap="wrap" gap={2}>
+        <Box>
+          <Typography variant="h4" sx={{ color: '#0F172A', fontSize: '1.6rem' }}>
+            Welcome back, {user?.fullName?.split(' ')[0] || 'User'}!
+          </Typography>
+          <Typography variant="body2" sx={{ color: '#64748B', mt: 0.5 }}>
+            Here's what's happening with your wallet today.
+          </Typography>
+        </Box>
         <Box>
           <Button
             variant="outlined"
             startIcon={<Refresh />}
             onClick={handleRefresh}
-            sx={{ mr: 2 }}
+            sx={{
+              mr: 1.5,
+              borderColor: '#E2E8F0',
+              color: '#334155',
+              '&:hover': { borderColor: '#CBD5E1', backgroundColor: '#F8FAFC' },
+            }}
           >
             Refresh
           </Button>
-          <Button
-            variant="contained"
-            component={Link}
-            to="/transfer"
-          >
+          <Button variant="contained" disableElevation component={Link} to="/transfer">
             New Transfer
           </Button>
         </Box>
       </Box>
 
-      <Grid container spacing={3}>
+      <Grid container spacing={2.5}>
         {stats.map((stat, index) => (
           <Grid item xs={12} sm={6} md={3} key={index}>
-            <Card>
-              <CardContent>
-                <Box display="flex" alignItems="center" justifyContent="space-between">
-                  <Box>
-                    <Typography color="textSecondary" gutterBottom>
-                      {stat.title}
-                    </Typography>
-                    <Typography variant="h5">
-                      {typeof stat.value === 'number' && stat.title.includes('Balance')
-                        ? formatCurrency(stat.value)
-                        : typeof stat.value === 'number' && stat.title.includes('Deposits')
-                        ? formatCurrency(stat.value)
-                        : typeof stat.value === 'number' && stat.title.includes('Withdrawals')
-                        ? formatCurrency(stat.value)
-                        : stat.value}
-                    </Typography>
-                  </Box>
-                  <Avatar sx={{ bgcolor: stat.color }}>
-                    {stat.icon}
-                  </Avatar>
-                </Box>
-              </CardContent>
-            </Card>
+            <BalanceCard
+              title={stat.title}
+              balance={stat.value}
+              icon={stat.icon}
+              color={stat.color}
+              maskable={stat.maskable}
+              subtitle={stat.subtitle}
+              trend={stat.trend}
+              isCount={stat.isCount}
+            />
           </Grid>
         ))}
       </Grid>
 
-      <Grid container spacing={3} sx={{ mt: 1 }}>
+      <Grid container spacing={2.5} sx={{ mt: 0.5 }}>
         <Grid item xs={12} md={8}>
-          <Paper sx={{ p: 3 }}>
-            <Typography variant="h6" gutterBottom>
+          <Paper
+            elevation={0}
+            sx={{ p: 3, borderRadius: '16px', border: '1px solid #E2E8F0', height: '100%' }}
+          >
+            <Typography variant="h6" sx={{ color: '#0F172A', fontSize: '1.05rem', mb: 1 }}>
               Transaction History
             </Typography>
             <TransactionChart data={chartData} />
@@ -163,17 +171,15 @@ const Dashboard = () => {
         </Grid>
 
         <Grid item xs={12} md={4}>
-          <Paper sx={{ p: 3 }}>
-            <Typography variant="h6" gutterBottom>
+          <Paper
+            elevation={0}
+            sx={{ p: 3, borderRadius: '16px', border: '1px solid #E2E8F0', height: '100%' }}
+          >
+            <Typography variant="h6" sx={{ color: '#0F172A', fontSize: '1.05rem', mb: 2 }}>
               Quick Actions
             </Typography>
-            <Box display="flex" flexDirection="column" gap={2}>
-              <Button
-                variant="contained"
-                fullWidth
-                component={Link}
-                to="/transfer"
-              >
+            <Box display="flex" flexDirection="column" gap={1.5}>
+              <Button variant="contained" disableElevation fullWidth component={Link} to="/transfer">
                 Make Transfer
               </Button>
               <Button
@@ -181,6 +187,7 @@ const Dashboard = () => {
                 fullWidth
                 component={Link}
                 to="/wallet"
+                sx={{ borderColor: '#E2E8F0', color: '#334155' }}
               >
                 View Wallet
               </Button>
@@ -189,6 +196,7 @@ const Dashboard = () => {
                 fullWidth
                 component={Link}
                 to="/transactions"
+                sx={{ borderColor: '#E2E8F0', color: '#334155' }}
               >
                 View All Transactions
               </Button>
@@ -198,10 +206,21 @@ const Dashboard = () => {
 
         {recentTransactions.length > 0 && (
           <Grid item xs={12}>
-            <Paper sx={{ p: 3 }}>
-              <Typography variant="h6" gutterBottom>
-                Recent Transactions
-              </Typography>
+            <Paper elevation={0} sx={{ p: 3, borderRadius: '16px', border: '1px solid #E2E8F0' }}>
+              <Box display="flex" justifyContent="space-between" alignItems="center" mb={1.5}>
+                <Typography variant="h6" sx={{ color: '#0F172A', fontSize: '1.05rem' }}>
+                  Recent Transactions
+                </Typography>
+                <Button
+                  component={Link}
+                  to="/transactions"
+                  size="small"
+                  endIcon={<ArrowForward sx={{ fontSize: 16 }} />}
+                  sx={{ color: '#2563EB', fontSize: '0.82rem' }}
+                >
+                  View all
+                </Button>
+              </Box>
               <Box>
                 {recentTransactions.map((transaction) => (
                   <Box
@@ -209,23 +228,26 @@ const Dashboard = () => {
                     sx={{
                       display: 'flex',
                       justifyContent: 'space-between',
-                      py: 1,
-                      borderBottom: '1px solid #e0e0e0',
+                      alignItems: 'center',
+                      py: 1.5,
+                      borderBottom: '1px solid #F1F5F9',
+                      '&:last-of-type': { borderBottom: 'none' },
                     }}
                   >
                     <Box>
-                      <Typography variant="body2" color="textSecondary">
+                      <Typography variant="body2" sx={{ color: '#0F172A', fontWeight: 600 }}>
                         {transaction.description || transaction.type}
                       </Typography>
-                      <Typography variant="caption" color="textSecondary">
+                      <Typography variant="caption" sx={{ color: '#94A3B8' }}>
                         {new Date(transaction.createdAt).toLocaleString()}
                       </Typography>
                     </Box>
                     <Typography
                       variant="body1"
                       sx={{
-                        color: transaction.type === 'DEPOSIT' ? '#2e7d32' :
-                               transaction.type === 'WITHDRAWAL' ? '#d32f2f' : '#1976d2'
+                        fontWeight: 700,
+                        color: transaction.type === 'DEPOSIT' ? '#16A34A' :
+                               transaction.type === 'WITHDRAWAL' ? '#DC2626' : '#2563EB'
                       }}
                     >
                       {transaction.type === 'DEPOSIT' ? '+' :

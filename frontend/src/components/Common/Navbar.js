@@ -12,8 +12,60 @@ import {
   Box,
   Avatar,
   Divider,
+  Badge,
 } from '@mui/material';
-import { AccountCircle, Wallet, ExitToApp, Home } from '@mui/icons-material';
+import {
+  AccountCircle,
+  ExitToApp,
+  DashboardOutlined,
+  AccountBalanceWalletOutlined,
+  ReceiptLongOutlined,
+  NotificationsNoneOutlined,
+  KeyboardArrowDown,
+  AccountBalanceWallet,
+} from '@mui/icons-material';
+
+const NAV_LINKS = [
+  { label: 'Dashboard', to: '/', icon: <DashboardOutlined fontSize="small" /> },
+  { label: 'Wallet', to: '/wallet', icon: <AccountBalanceWalletOutlined fontSize="small" /> },
+  { label: 'Transactions', to: '/transactions', icon: <ReceiptLongOutlined fontSize="small" /> },
+];
+
+const Logo = () => (
+  <Box
+    component={Link}
+    to="/"
+    sx={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: 1,
+      textDecoration: 'none',
+      mr: 4,
+    }}
+  >
+    <Box
+      sx={{
+        width: 34,
+        height: 34,
+        borderRadius: '10px',
+        background: 'linear-gradient(135deg, #2563EB 0%, #7C3AED 100%)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: '#FFFFFF',
+        flexShrink: 0,
+      }}
+    >
+      <AccountBalanceWallet sx={{ fontSize: 19 }} />
+    </Box>
+    <Typography
+      variant="h6"
+      sx={{ color: '#0F172A', fontWeight: 800, letterSpacing: '-0.02em', fontSize: '1.15rem' }}
+    >
+      FinPay
+    </Typography>
+  </Box>
+);
 
 const Navbar = () => {
   const { user, logout, isAuthenticated } = useAuth();
@@ -40,17 +92,25 @@ const Navbar = () => {
     handleClose();
   };
 
+  const barSx = {
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    backdropFilter: 'blur(12px)',
+    WebkitBackdropFilter: 'blur(12px)',
+    borderBottom: '1px solid #E2E8F0',
+    color: '#0F172A',
+  };
+
   if (!isAuthenticated) {
     return (
-      <AppBar position="static">
-        <Toolbar>
-          <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-            FinPay
-          </Typography>
-          <Button color="inherit" component={Link} to="/login">
+      <AppBar position="static" elevation={0} sx={barSx}>
+        <Toolbar sx={{ minHeight: 64 }}>
+          <Box sx={{ flexGrow: 1, display: 'flex' }}>
+            <Logo />
+          </Box>
+          <Button component={Link} to="/login" sx={{ color: '#475569', mr: 1 }}>
             Login
           </Button>
-          <Button color="inherit" component={Link} to="/register">
+          <Button variant="contained" component={Link} to="/register" disableElevation>
             Register
           </Button>
         </Toolbar>
@@ -61,91 +121,109 @@ const Navbar = () => {
   const isActive = (path) => location.pathname === path;
 
   return (
-    <AppBar position="static">
-      <Toolbar>
-        <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-          FinPay
-        </Typography>
+    <AppBar position="static" elevation={0} sx={barSx}>
+      <Toolbar sx={{ minHeight: 64 }}>
+        <Logo />
 
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Button
-            color="inherit"
-            component={Link}
-            to="/"
-            startIcon={<Home />}
-            sx={{
-              '&.active': {
-                backgroundColor: 'rgba(255,255,255,0.1)',
-                borderRadius: 1
-              }
-            }}
-            className={isActive('/') ? 'active' : ''}
-          >
-            Dashboard
-          </Button>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexGrow: 1 }}>
+          {NAV_LINKS.map((link) => {
+            const active = isActive(link.to);
+            return (
+              <Button
+                key={link.to}
+                component={Link}
+                to={link.to}
+                startIcon={link.icon}
+                sx={{
+                  px: 1.75,
+                  py: 0.75,
+                  borderRadius: '10px',
+                  fontSize: '0.9rem',
+                  fontWeight: 600,
+                  color: active ? '#2563EB' : '#64748B',
+                  backgroundColor: active ? 'rgba(37, 99, 235, 0.08)' : 'transparent',
+                  '&:hover': {
+                    backgroundColor: active ? 'rgba(37, 99, 235, 0.12)' : 'rgba(15, 23, 42, 0.04)',
+                  },
+                }}
+              >
+                {link.label}
+              </Button>
+            );
+          })}
+        </Box>
 
-          <Button
-            color="inherit"
-            component={Link}
-            to="/wallet"
-            startIcon={<Wallet />}
-            sx={{
-              '&.active': {
-                backgroundColor: 'rgba(255,255,255,0.1)',
-                borderRadius: 1
-              }
-            }}
-            className={isActive('/wallet') ? 'active' : ''}
-          >
-            Wallet
-          </Button>
-
-          <Button
-            color="inherit"
-            component={Link}
-            to="/transactions"
-            sx={{
-              '&.active': {
-                backgroundColor: 'rgba(255,255,255,0.1)',
-                borderRadius: 1
-              }
-            }}
-            className={isActive('/transactions') ? 'active' : ''}
-          >
-            Transactions
-          </Button>
-
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
           <IconButton
-            size="large"
-            onClick={handleMenu}
-            color="inherit"
+            size="medium"
+            sx={{
+              color: '#64748B',
+              '&:hover': { backgroundColor: 'rgba(15, 23, 42, 0.04)' },
+            }}
           >
-            <Avatar sx={{ width: 32, height: 32, bgcolor: 'secondary.main' }}>
+            <Badge variant="dot" color="secondary" overlap="circular">
+              <NotificationsNoneOutlined fontSize="small" />
+            </Badge>
+          </IconButton>
+
+          <Box
+            onClick={handleMenu}
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0.5,
+              cursor: 'pointer',
+              px: 0.75,
+              py: 0.5,
+              borderRadius: '10px',
+              ml: 0.5,
+              '&:hover': { backgroundColor: 'rgba(15, 23, 42, 0.04)' },
+            }}
+          >
+            <Avatar
+              sx={{
+                width: 32,
+                height: 32,
+                fontSize: '0.9rem',
+                fontWeight: 700,
+                background: 'linear-gradient(135deg, #2563EB 0%, #7C3AED 100%)',
+              }}
+            >
               {user?.fullName?.charAt(0).toUpperCase() || 'U'}
             </Avatar>
-          </IconButton>
+            <KeyboardArrowDown sx={{ fontSize: 18, color: '#94A3B8' }} />
+          </Box>
 
           <Menu
             anchorEl={anchorEl}
             open={Boolean(anchorEl)}
             onClose={handleClose}
+            PaperProps={{
+              sx: {
+                mt: 1,
+                borderRadius: '12px',
+                border: '1px solid #E2E8F0',
+                boxShadow: '0 8px 24px rgba(15, 23, 42, 0.08)',
+                minWidth: 200,
+              },
+            }}
           >
-            <MenuItem disabled>
-              <Typography variant="body2">
+            <MenuItem disabled sx={{ opacity: '1 !important' }}>
+              <Typography variant="body2" sx={{ fontWeight: 600, color: '#0F172A' }}>
                 {user?.fullName || 'User'}
               </Typography>
             </MenuItem>
-            <MenuItem disabled>
-              <Typography variant="caption" color="textSecondary">
+            <MenuItem disabled sx={{ opacity: '1 !important', mt: -1 }}>
+              <Typography variant="caption" sx={{ color: '#64748B' }}>
                 {user?.email || ''}
               </Typography>
             </MenuItem>
-            <Divider />
-            <MenuItem onClick={handleProfile}>
-              <AccountCircle sx={{ mr: 1 }} /> Profile
+            <Divider sx={{ my: 0.5 }} />
+            <MenuItem onClick={handleProfile} sx={{ color: '#334155', fontSize: '0.9rem' }}>
+              <AccountCircle sx={{ mr: 1.5, fontSize: 20 }} /> Profile
             </MenuItem>
-            <MenuItem onClick={handleLogout}>
-              <ExitToApp sx={{ mr: 1 }} /> Logout
+            <MenuItem onClick={handleLogout} sx={{ color: '#DC2626', fontSize: '0.9rem' }}>
+              <ExitToApp sx={{ mr: 1.5, fontSize: 20 }} /> Logout
             </MenuItem>
           </Menu>
         </Box>
