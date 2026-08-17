@@ -1,0 +1,57 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: finpay-postgres
+    environment:
+      POSTGRES_DB: finpay
+      POSTGRES_USER: finpay_user
+      POSTGRES_PASSWORD: finpay_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U finpay_user -d finpay"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - finpay-network
+
+  backend:
+    build:
+      context: ./backend
+    container_name: finpay-backend
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/finpay
+      DB_USER: finpay_user
+      DB_PASSWORD: finpay_password
+      JWT_SECRET: 404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970
+      PORT: 8080
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - finpay-network
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: finpay-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - finpay-network
+
+volumes:
+  postgres_data:
+
+networks:
+  finpay-network:
+    driver: bridge
