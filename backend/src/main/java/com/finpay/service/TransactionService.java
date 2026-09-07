@@ -82,7 +82,16 @@ public class TransactionService {
         log.info("Processing transfer of {} from wallet {} to wallet {}",
                 request.getAmount(), request.getSourceWalletId(), request.getDestinationWalletId());
 
-        if (request.getSourceWalletId().equals(request.getDestinationWalletId())) {
+        // The client submits the destination as a human-facing wallet NUMBER
+        // (e.g. "WPA9BA548D"), not the internal wallet ID/UUID - the sender has no way
+        // of knowing the recipient's internal ID. Resolve it to the real wallet ID
+        // up front so the locking logic below (which operates on IDs) works correctly.
+        String destinationWalletId = walletRepository.findByWalletNumber(request.getDestinationWalletId())
+                .map(Wallet::getId)
+                .orElseThrow(() -> new WalletNotFoundException(
+                        "Destination wallet not found: " + request.getDestinationWalletId()));
+
+        if (request.getSourceWalletId().equals(destinationWalletId)) {
             throw new IllegalArgumentException("Cannot transfer to the same wallet");
         }
 
@@ -91,9 +100,9 @@ public class TransactionService {
         // concurrent transfers in opposite directions (A->B and B->A) would lock A/B in
         // reverse order from one another and could deadlock. Locking in ID order means
         // every transfer involving A and B always acquires the locks in the same sequence.
-        boolean sourceFirst = request.getSourceWalletId().compareTo(request.getDestinationWalletId()) < 0;
-        String firstId = sourceFirst ? request.getSourceWalletId() : request.getDestinationWalletId();
-        String secondId = sourceFirst ? request.getDestinationWalletId() : request.getSourceWalletId();
+        boolean sourceFirst = request.getSourceWalletId().compareTo(destinationWalletId) < 0;
+        String firstId = sourceFirst ? request.getSourceWalletId() : destinationWalletId;
+        String secondId = sourceFirst ? destinationWalletId : request.getSourceWalletId();
 
         String firstLabel = sourceFirst ? "Source" : "Destination";
         String secondLabel = sourceFirst ? "Destination" : "Source";
