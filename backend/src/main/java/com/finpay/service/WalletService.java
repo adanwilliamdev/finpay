@@ -7,6 +7,7 @@ import com.finpay.exception.UserNotFoundException;
 import com.finpay.exception.WalletNotFoundException;
 import com.finpay.repository.UserRepository;
 import com.finpay.repository.WalletRepository;
+import com.finpay.security.SecurityUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -28,10 +29,17 @@ public class WalletService {
     public WalletResponse getWalletById(String walletId) {
         Wallet wallet = walletRepository.findById(walletId)
                 .orElseThrow(() -> new WalletNotFoundException("Wallet not found: " + walletId));
+
+        String ownerId = wallet.getUser() != null ? wallet.getUser().getId() : null;
+        SecurityUtil.checkOwnerOrAdmin(ownerId);
+
         return convertToResponse(wallet);
     }
 
     public WalletResponse getWalletByUserId(String userId) {
+        // Only the owner themselves (or an admin) can look up a wallet by user id
+        SecurityUtil.checkOwnerOrAdmin(userId);
+
         Wallet wallet = walletRepository.findByUserId(userId)
                 .orElseThrow(() -> new WalletNotFoundException("Wallet not found for user: " + userId));
         return convertToResponse(wallet);

@@ -10,6 +10,7 @@ import com.finpay.exception.InsufficientBalanceException;
 import com.finpay.exception.WalletNotFoundException;
 import com.finpay.repository.TransactionRepository;
 import com.finpay.repository.WalletRepository;
+import com.finpay.security.SecurityUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,6 +40,9 @@ public class TransactionService {
 
         Wallet wallet = walletRepository.findByIdWithLock(request.getWalletId())
                 .orElseThrow(() -> new WalletNotFoundException("Wallet not found: " + request.getWalletId()));
+
+        // A user may only deposit into their own wallet (admins may deposit into any wallet)
+        SecurityUtil.checkOwnerOrAdmin(wallet.getUser() != null ? wallet.getUser().getId() : null);
 
         if (wallet.getStatus() != Wallet.WalletStatus.ACTIVE) {
             throw new IllegalStateException("Wallet is not active");
@@ -88,6 +92,11 @@ public class TransactionService {
         Wallet destinationWallet = walletRepository.findByIdWithLock(request.getDestinationWalletId())
                 .orElseThrow(() -> new WalletNotFoundException("Destination wallet not found: " + request.getDestinationWalletId()));
 
+        // Only the owner of the source wallet (or an admin) can move money out of it.
+        // No ownership check on the destination wallet: transferring TO another person's
+        // wallet is the whole point of a peer-to-peer transfer.
+        SecurityUtil.checkOwnerOrAdmin(sourceWallet.getUser() != null ? sourceWallet.getUser().getId() : null);
+
         if (sourceWallet.getStatus() != Wallet.WalletStatus.ACTIVE) {
             throw new IllegalStateException("Source wallet is not active");
         }
@@ -136,6 +145,10 @@ public class TransactionService {
 
     @Transactional(readOnly = true)
     public Page<TransactionResponse> getTransactionsByWallet(String walletId, Pageable pageable) {
+        Wallet wallet = walletRepository.findById(walletId)
+                .orElseThrow(() -> new WalletNotFoundException("Wallet not found: " + walletId));
+        SecurityUtil.checkOwnerOrAdmin(wallet.getUser() != null ? wallet.getUser().getId() : null);
+
         return transactionRepository.findByWalletId(walletId, pageable)
                 .map(this::convertToResponse);
     }
@@ -146,6 +159,8 @@ public class TransactionService {
 
         Wallet wallet = walletRepository.findById(walletId)
                 .orElseThrow(() -> new WalletNotFoundException("Wallet not found: " + walletId));
+
+        SecurityUtil.checkOwnerOrAdmin(wallet.getUser() != null ? wallet.getUser().getId() : null);
 
         BigDecimal totalDeposits = transactionRepository.sumDepositsByWallet(walletId);
         BigDecimal totalWithdrawals = transactionRepository.sumWithdrawalsByWallet(walletId);
@@ -190,6 +205,20 @@ public class TransactionService {
 
         Transaction originalTransaction = transactionRepository.findById(transactionId)
                 .orElseThrow(() -> new IllegalArgumentException("Transaction not found: " + transactionId));
+
+        // Only a user who owns one of the wallets involved in the transaction (or an
+        // admin) may reverse it - otherwise anyone could reverse anyone else's transfers.
+        boolean ownsSource = originalTransaction.getSourceWallet() != null
+                && originalTransaction.getSourceWallet().getUser() != null
+                && originalTransaction.getSourceWallet().getUser().getId().equals(SecurityUtil.getCurrentUserId());
+        boolean ownsDestination = originalTransaction.getDestinationWallet() != null
+                && originalTransaction.getDestinationWallet().getUser() != null
+                && originalTransaction.getDestinationWallet().getUser().getId().equals(SecurityUtil.getCurrentUserId());
+
+        if (!ownsSource && !ownsDestination && !SecurityUtil.isAdmin()) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "You don't have permission to reverse this transaction");
+        }
 
         if (originalTransaction.getStatus() == Transaction.TransactionStatus.REVERSED) {
             throw new IllegalStateException("Transaction already reversed");
