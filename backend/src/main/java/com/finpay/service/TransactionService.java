@@ -6,6 +6,7 @@ import com.finpay.dto.response.BalanceResponse;
 import com.finpay.dto.response.TransactionResponse;
 import com.finpay.entity.Transaction;
 import com.finpay.entity.Wallet;
+import com.finpay.exception.CurrencyMismatchException;
 import com.finpay.exception.InsufficientBalanceException;
 import com.finpay.exception.WalletNotFoundException;
 import com.finpay.repository.TransactionRepository;
@@ -85,12 +86,31 @@ public class TransactionService {
             throw new IllegalArgumentException("Cannot transfer to the same wallet");
         }
 
-        // Lock both wallets in order to avoid deadlocks
-        Wallet sourceWallet = walletRepository.findByIdWithLock(request.getSourceWalletId())
-                .orElseThrow(() -> new WalletNotFoundException("Source wallet not found: " + request.getSourceWalletId()));
+        // Lock both wallets in a canonical order (by ID) rather than by the order they
+        // arrived in the request. If we always locked "source then destination", two
+        // concurrent transfers in opposite directions (A->B and B->A) would lock A/B in
+        // reverse order from one another and could deadlock. Locking in ID order means
+        // every transfer involving A and B always acquires the locks in the same sequence.
+        boolean sourceFirst = request.getSourceWalletId().compareTo(request.getDestinationWalletId()) < 0;
+        String firstId = sourceFirst ? request.getSourceWalletId() : request.getDestinationWalletId();
+        String secondId = sourceFirst ? request.getDestinationWalletId() : request.getSourceWalletId();
 
-        Wallet destinationWallet = walletRepository.findByIdWithLock(request.getDestinationWalletId())
-                .orElseThrow(() -> new WalletNotFoundException("Destination wallet not found: " + request.getDestinationWalletId()));
+        String firstLabel = sourceFirst ? "Source" : "Destination";
+        String secondLabel = sourceFirst ? "Destination" : "Source";
+
+        Wallet firstWallet = walletRepository.findByIdWithLock(firstId)
+                .orElseThrow(() -> new WalletNotFoundException(firstLabel + " wallet not found: " + firstId));
+        Wallet secondWallet = walletRepository.findByIdWithLock(secondId)
+                .orElseThrow(() -> new WalletNotFoundException(secondLabel + " wallet not found: " + secondId));
+
+        Wallet sourceWallet = sourceFirst ? firstWallet : secondWallet;
+        Wallet destinationWallet = sourceFirst ? secondWallet : firstWallet;
+
+        if (!sourceWallet.getCurrency().equals(destinationWallet.getCurrency())) {
+            throw new CurrencyMismatchException(
+                    "Cannot transfer between wallets with different currencies: " +
+                            sourceWallet.getCurrency() + " -> " + destinationWallet.getCurrency());
+        }
 
         // Only the owner of the source wallet (or an admin) can move money out of it.
         // No ownership check on the destination wallet: transferring TO another person's

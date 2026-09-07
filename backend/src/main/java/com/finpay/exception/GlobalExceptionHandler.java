@@ -45,6 +45,19 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(error, HttpStatus.NOT_FOUND);
     }
 
+    @ExceptionHandler(CurrencyMismatchException.class)
+    public ResponseEntity<ErrorResponse> handleCurrencyMismatchException(CurrencyMismatchException ex, WebRequest request) {
+        log.error("Currency mismatch: {}", ex.getMessage());
+        ErrorResponse error = new ErrorResponse(
+                LocalDateTime.now(),
+                HttpStatus.BAD_REQUEST.value(),
+                "Currency Mismatch",
+                ex.getMessage(),
+                request.getDescription(false)
+        );
+        return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
+    }
+
     @ExceptionHandler(InsufficientBalanceException.class)
     public ResponseEntity<ErrorResponse> handleInsufficientBalanceException(InsufficientBalanceException ex, WebRequest request) {
         log.error("Insufficient balance: {}", ex.getMessage());
@@ -85,21 +98,30 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ErrorResponse> handleValidationExceptions(MethodArgumentNotValidException ex, WebRequest request) {
+    public ResponseEntity<ValidationErrorResponse> handleValidationExceptions(MethodArgumentNotValidException ex, WebRequest request) {
         log.error("Validation error: {}", ex.getMessage());
-        Map<String, String> errors = new HashMap<>();
+        Map<String, String> fieldErrors = new HashMap<>();
         ex.getBindingResult().getAllErrors().forEach((error) -> {
             String fieldName = ((FieldError) error).getField();
             String errorMessage = error.getDefaultMessage();
-            errors.put(fieldName, errorMessage);
+            fieldErrors.put(fieldName, errorMessage);
         });
 
-        ErrorResponse error = new ErrorResponse(
+        // A single human-readable message for callers (e.g. a toast) that just want
+        // something to display, plus the structured per-field map for callers that
+        // want to highlight individual form fields - rather than the raw
+        // HashMap#toString() dump that used to be sent as "message".
+        String message = fieldErrors.entrySet().stream()
+                .map(e -> e.getKey() + ": " + e.getValue())
+                .collect(java.util.stream.Collectors.joining("; "));
+
+        ValidationErrorResponse error = new ValidationErrorResponse(
                 LocalDateTime.now(),
                 HttpStatus.BAD_REQUEST.value(),
                 "Validation Error",
-                errors.toString(),
-                request.getDescription(false)
+                message,
+                request.getDescription(false),
+                fieldErrors
         );
         return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
     }
@@ -131,4 +153,7 @@ public class GlobalExceptionHandler {
     }
 
     record ErrorResponse(LocalDateTime timestamp, int status, String error, String message, String path) {}
+
+    record ValidationErrorResponse(LocalDateTime timestamp, int status, String error, String message,
+                                    String path, Map<String, String> fieldErrors) {}
 }
