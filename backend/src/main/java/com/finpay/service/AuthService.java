@@ -9,6 +9,7 @@ import com.finpay.exception.UserNotFoundException;
 import com.finpay.repository.UserRepository;
 import com.finpay.repository.WalletRepository;
 import com.finpay.security.JwtTokenProvider;
+import com.finpay.security.SecurityUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -20,7 +21,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Service
@@ -122,9 +122,11 @@ public class AuthService {
 
     public void logout(String token) {
         log.info("Logout attempt");
-        // In JWT, we would typically invalidate the token
-        // For simplicity, we'll just log the action
-        auditService.logAction("LOGOUT", "User", null, null, null, "User logged out");
+        // Stateless JWT: the token itself is not invalidated server-side (see README roadmap),
+        // we only record who logged out. The JWT filter has already populated the security
+        // context if the token is valid; otherwise the entry is attributed to SYSTEM.
+        String userId = SecurityUtil.getCurrentUserIdOrNull();
+        auditService.logAction("LOGOUT", "User", userId, null, null, "User logged out");
     }
 
     private String generateWalletNumber() {

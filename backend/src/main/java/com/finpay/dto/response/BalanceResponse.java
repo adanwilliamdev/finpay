@@ -16,7 +16,10 @@ public class BalanceResponse {
     private BigDecimal totalBalance;
     private BigDecimal totalDeposits;
     private BigDecimal totalWithdrawals;
-    private BigDecimal totalTransfers;
+    /** Sum of completed transfers sent FROM this wallet (money out). */
+    private BigDecimal totalTransfersOut;
+    /** Sum of completed transfers received BY this wallet (money in). */
+    private BigDecimal totalTransfersIn;
     private List<TransactionResponse> recentTransactions;
-    private int totalTransactions;
+    private long totalTransactions;
 }

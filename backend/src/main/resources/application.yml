@@ -36,6 +36,14 @@ spring:
     serialization:
       write-dates-as-timestamps: false
 
+finpay:
+  seed:
+    # Creates admin@finpay.com / user@finpay.com on startup. Off by default; NEVER enable in production.
+    demo-users: ${SEED_DEMO_USERS:false}
+  reversal:
+    # How long after a transfer/withdrawal its sender may still reverse it (admins: unlimited)
+    user-window-minutes: ${REVERSAL_USER_WINDOW_MINUTES:30}
+
 jwt:
   secret: ${JWT_SECRET:404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}
   expiration: 86400000 # 24 hours

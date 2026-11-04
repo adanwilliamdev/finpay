@@ -20,7 +20,6 @@ O projeto utiliza autenticação JWT, PostgreSQL, Flyway, controle de concorrên
 | Flyway            | Migrations               |
 | JWT               | Autenticação             |
 | Lombok            | Redução de boilerplate   |
-| MapStruct         | Mapeamento DTO           |
 | OpenAPI / Swagger | Documentação da API      |
 
 ### Frontend
@@ -115,6 +114,17 @@ npm start
 | User   | `user@finpay.com`  | `User@123`  |
 
 > ⚠️ Essas credenciais são destinadas apenas ao ambiente de desenvolvimento/demonstração.
+
+As contas são criadas na inicialização por um *seeder* (`DemoDataSeeder`), **não** por migration, para que nenhum
+ambiente receba um admin com senha pública por acidente. O seeder só roda quando `SEED_DEMO_USERS=true`
+(`finpay.seed.demo-users`):
+
+* `docker compose up` → ativado (definido no `docker-compose.yml`);
+* profile `dev` (`--spring.profiles.active=dev`) → ativado;
+* qualquer outro caso → **desativado** (padrão). Nunca habilite em produção.
+
+É idempotente: contas já existentes não são alteradas. O usuário `user@finpay.com` começa com R$ 1.000,00
+(registrado como um depósito no ledger) e a carteira do admin começa zerada.
 
 ---
 
@@ -243,6 +253,37 @@ npm test
 | `POST` | `/api/transactions/{id}/reverse`              | Reverter transação     |
 
 ---
+
+### ↩️ Regras de reversão
+
+`POST /api/transactions/{id}/reverse` devolve o dinheiro e marca a transação original como `REVERSED`,
+gerando uma transação `REVERSAL` (origem = carteira debitada, destino = carteira creditada).
+
+| Quem                                         | Pode reverter                                                                 |
+| -------------------------------------------- | ----------------------------------------------------------------------------- |
+| `ADMIN`                                      | Qualquer depósito, transferência ou saque `COMPLETED`                         |
+| Remetente (dono da carteira de origem)       | Transferência/saque próprios, em até `finpay.reversal.user-window-minutes` (padrão 30 min, env `REVERSAL_USER_WINDOW_MINUTES`) |
+| Destinatário de uma transferência            | ❌ Nunca (`403`)                                                              |
+| Dono de um depósito                          | ❌ Depósitos só podem ser revertidos por admin (`403`)                        |
+
+Rejeições de regra de negócio retornam `409 Conflict` com mensagem explícita: transação já revertida, uma
+`REVERSAL` não pode ser revertida, janela expirada, carteira fechada, ou destinatário que já gastou o valor.
+A transação e todas as carteiras envolvidas são bloqueadas (`SELECT … FOR UPDATE`, carteiras em ordem de ID)
+antes de qualquer alteração, então reversões e transferências concorrentes não geram corrida nem deadlock.
+
+### ❌ Tentativas falhas
+
+Transferências e depósitos rejeitados por regra de negócio (saldo insuficiente, carteira inativa, moedas
+diferentes) deixam um registro `FAILED` no ledger (e no audit log) com o motivo na descrição; nenhum saldo é
+alterado. Esses registros só aparecem no extrato da carteira **de origem**. O status `PENDING` segue reservado
+para fluxos assíncronos futuros.
+
+### 📊 Resumo de saldo
+
+`GET /api/transactions/wallet/{id}/balance` retorna `totalDeposits`, `totalWithdrawals`, `totalTransfersOut`
+(enviadas), `totalTransfersIn` (recebidas) e `totalTransactions`, calculados com `SUM`/`COUNT` no banco
+(somente transações `COMPLETED`). *Mudança:* o campo `totalTransfers` foi substituído por `totalTransfersOut`
+e `totalTransfersIn`.
 
 ## 🤝 Contribuindo
 

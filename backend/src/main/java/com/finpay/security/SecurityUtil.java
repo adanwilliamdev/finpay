@@ -26,6 +26,18 @@ public final class SecurityUtil {
         return getCurrentUser().getId();
     }
 
+    /**
+     * Same as {@link #getCurrentUserId()} but returns null instead of throwing when there is
+     * no authenticated user (anonymous request, background job).
+     */
+    public static String getCurrentUserIdOrNull() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null && authentication.getPrincipal() instanceof User user) {
+            return user.getId();
+        }
+        return null;
+    }
+
     public static boolean isAdmin() {
         return getCurrentUser().getRole() == User.UserRole.ADMIN;
     }

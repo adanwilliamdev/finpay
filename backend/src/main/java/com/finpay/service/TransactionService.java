@@ -5,26 +5,40 @@ import com.finpay.dto.request.TransferRequest;
 import com.finpay.dto.response.BalanceResponse;
 import com.finpay.dto.response.TransactionResponse;
 import com.finpay.entity.Transaction;
+import com.finpay.entity.Transaction.TransactionStatus;
+import com.finpay.entity.Transaction.TransactionType;
 import com.finpay.entity.Wallet;
 import com.finpay.exception.CurrencyMismatchException;
 import com.finpay.exception.InsufficientBalanceException;
+import com.finpay.exception.ReversalNotAllowedException;
+import com.finpay.exception.TransactionNotFoundException;
 import com.finpay.exception.WalletNotFoundException;
 import com.finpay.repository.TransactionRepository;
 import com.finpay.repository.WalletRepository;
 import com.finpay.security.SecurityUtil;
+import com.finpay.util.RequestUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.TreeSet;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Service
 @RequiredArgsConstructor
@@ -34,19 +48,57 @@ public class TransactionService {
     private final TransactionRepository transactionRepository;
     private final WalletRepository walletRepository;
     private final AuditService auditService;
+    private final TransactionTemplate transactionTemplate;
 
-    @Transactional
+    /** How long after a transfer/withdrawal its sender may still reverse it without an admin. */
+    @Value("${finpay.reversal.user-window-minutes:30}")
+    private long reversalUserWindowMinutes;
+
+    // ------------------------------------------------------------------------------------
+    // Deposit / transfer
+    //
+    // These two methods are intentionally NOT @Transactional. The money movement runs inside
+    // a programmatic transaction (TransactionTemplate); when a business rule rejects the
+    // operation that transaction rolls back and ONLY THEN is a FAILED record written, in a
+    // fresh transaction. Writing it inside the failing transaction would be rolled back with
+    // it, and writing it with REQUIRES_NEW from inside would self-deadlock: the new
+    // connection's FK check needs a KEY SHARE lock on wallet rows that the outer transaction
+    // holds FOR UPDATE.
+    // Consequence: callers must not wrap these methods in their own transaction.
+    // ------------------------------------------------------------------------------------
+
     public TransactionResponse deposit(DepositRequest request, HttpServletRequest httpRequest) {
         log.info("Processing deposit of {} to wallet: {}", request.getAmount(), request.getWalletId());
+        try {
+            return transactionTemplate.execute(status -> doDeposit(request, httpRequest));
+        } catch (RejectedOperationException rejected) {
+            recordFailedAttempt(rejected, httpRequest);
+            throw rejected.getReason();
+        }
+    }
 
+    public TransactionResponse transfer(TransferRequest request, HttpServletRequest httpRequest) {
+        log.info("Processing transfer of {} from wallet {} to wallet {}",
+                request.getAmount(), request.getSourceWalletId(), request.getDestinationWalletId());
+        try {
+            return transactionTemplate.execute(status -> doTransfer(request, httpRequest));
+        } catch (RejectedOperationException rejected) {
+            recordFailedAttempt(rejected, httpRequest);
+            throw rejected.getReason();
+        }
+    }
+
+    private TransactionResponse doDeposit(DepositRequest request, HttpServletRequest httpRequest) {
         Wallet wallet = walletRepository.findByIdWithLock(request.getWalletId())
                 .orElseThrow(() -> new WalletNotFoundException("Wallet not found: " + request.getWalletId()));
 
         // A user may only deposit into their own wallet (admins may deposit into any wallet)
-        SecurityUtil.checkOwnerOrAdmin(wallet.getUser() != null ? wallet.getUser().getId() : null);
+        SecurityUtil.checkOwnerOrAdmin(ownerId(wallet));
 
         if (wallet.getStatus() != Wallet.WalletStatus.ACTIVE) {
-            throw new IllegalStateException("Wallet is not active");
+            throw new RejectedOperationException(new IllegalStateException("Wallet is not active"),
+                    TransactionType.DEPOSIT, request.getAmount(), request.getDescription(),
+                    null, wallet.getId());
         }
 
         BigDecimal balanceBefore = wallet.getBalance();
@@ -56,15 +108,15 @@ public class TransactionService {
         Transaction transaction = Transaction.builder()
                 .transactionId(generateTransactionId())
                 .amount(request.getAmount())
-                .type(Transaction.TransactionType.DEPOSIT)
-                .status(Transaction.TransactionStatus.COMPLETED)
+                .type(TransactionType.DEPOSIT)
+                .status(TransactionStatus.COMPLETED)
                 .description(request.getDescription() != null ? request.getDescription() : "Deposit")
                 .currency(wallet.getCurrency())
                 .destinationWallet(wallet)
                 .balanceBefore(balanceBefore)
                 .balanceAfter(wallet.getBalance())
-                .ipAddress(getClientIp(httpRequest))
-                .userAgent(httpRequest.getHeader("User-Agent"))
+                .ipAddress(RequestUtil.getClientIp(httpRequest))
+                .userAgent(RequestUtil.getUserAgent(httpRequest))
                 .build();
 
         transaction = transactionRepository.save(transaction);
@@ -77,88 +129,66 @@ public class TransactionService {
         return convertToResponse(transaction);
     }
 
-    @Transactional
-    public TransactionResponse transfer(TransferRequest request, HttpServletRequest httpRequest) {
-        log.info("Processing transfer of {} from wallet {} to wallet {}",
-                request.getAmount(), request.getSourceWalletId(), request.getDestinationWalletId());
-
+    private TransactionResponse doTransfer(TransferRequest request, HttpServletRequest httpRequest) {
         // The client submits the destination as a human-facing wallet NUMBER
         // (e.g. "WPA9BA548D"), not the internal wallet ID/UUID - the sender has no way
         // of knowing the recipient's internal ID. Resolve it to the real wallet ID
         // up front so the locking logic below (which operates on IDs) works correctly.
-        String destinationWalletId = walletRepository.findByWalletNumber(request.getDestinationWalletId())
+        String sourceId = request.getSourceWalletId();
+        String destinationId = walletRepository.findByWalletNumber(request.getDestinationWalletId())
                 .map(Wallet::getId)
                 .orElseThrow(() -> new WalletNotFoundException(
                         "Destination wallet not found: " + request.getDestinationWalletId()));
 
-        if (request.getSourceWalletId().equals(destinationWalletId)) {
+        if (sourceId.equals(destinationId)) {
             throw new IllegalArgumentException("Cannot transfer to the same wallet");
         }
 
-        // Lock both wallets in a canonical order (by ID) rather than by the order they
-        // arrived in the request. If we always locked "source then destination", two
-        // concurrent transfers in opposite directions (A->B and B->A) would lock A/B in
-        // reverse order from one another and could deadlock. Locking in ID order means
-        // every transfer involving A and B always acquires the locks in the same sequence.
-        boolean sourceFirst = request.getSourceWalletId().compareTo(destinationWalletId) < 0;
-        String firstId = sourceFirst ? request.getSourceWalletId() : destinationWalletId;
-        String secondId = sourceFirst ? destinationWalletId : request.getSourceWalletId();
-
-        String firstLabel = sourceFirst ? "Source" : "Destination";
-        String secondLabel = sourceFirst ? "Destination" : "Source";
-
-        Wallet firstWallet = walletRepository.findByIdWithLock(firstId)
-                .orElseThrow(() -> new WalletNotFoundException(firstLabel + " wallet not found: " + firstId));
-        Wallet secondWallet = walletRepository.findByIdWithLock(secondId)
-                .orElseThrow(() -> new WalletNotFoundException(secondLabel + " wallet not found: " + secondId));
-
-        Wallet sourceWallet = sourceFirst ? firstWallet : secondWallet;
-        Wallet destinationWallet = sourceFirst ? secondWallet : firstWallet;
-
-        if (!sourceWallet.getCurrency().equals(destinationWallet.getCurrency())) {
-            throw new CurrencyMismatchException(
-                    "Cannot transfer between wallets with different currencies: " +
-                            sourceWallet.getCurrency() + " -> " + destinationWallet.getCurrency());
-        }
+        Map<String, Wallet> locked = lockWallets(List.of(sourceId, destinationId));
+        Wallet sourceWallet = locked.get(sourceId);
+        Wallet destinationWallet = locked.get(destinationId);
 
         // Only the owner of the source wallet (or an admin) can move money out of it.
         // No ownership check on the destination wallet: transferring TO another person's
         // wallet is the whole point of a peer-to-peer transfer.
-        SecurityUtil.checkOwnerOrAdmin(sourceWallet.getUser() != null ? sourceWallet.getUser().getId() : null);
-
-        if (sourceWallet.getStatus() != Wallet.WalletStatus.ACTIVE) {
-            throw new IllegalStateException("Source wallet is not active");
-        }
-
-        if (destinationWallet.getStatus() != Wallet.WalletStatus.ACTIVE) {
-            throw new IllegalStateException("Destination wallet is not active");
-        }
+        // This runs BEFORE the business checks below on purpose: a rejected attempt is
+        // recorded on the source wallet, so only its owner may be able to trigger that.
+        SecurityUtil.checkOwnerOrAdmin(ownerId(sourceWallet));
 
         BigDecimal sourceBalanceBefore = sourceWallet.getBalance();
-        BigDecimal destBalanceBefore = destinationWallet.getBalance();
 
-        // Debit from source
-        sourceWallet.debit(request.getAmount());
+        try {
+            requireActive(sourceWallet, "Source wallet is not active");
+            requireActive(destinationWallet, "Destination wallet is not active");
+            if (!sourceWallet.getCurrency().equals(destinationWallet.getCurrency())) {
+                throw new CurrencyMismatchException(
+                        "Cannot transfer between wallets with different currencies: " +
+                                sourceWallet.getCurrency() + " -> " + destinationWallet.getCurrency());
+            }
+            sourceWallet.debit(request.getAmount());
+        } catch (InsufficientBalanceException | CurrencyMismatchException | IllegalStateException e) {
+            throw new RejectedOperationException(e, TransactionType.TRANSFER, request.getAmount(),
+                    request.getDescription(), sourceId, destinationId);
+        }
+
         sourceWallet = walletRepository.save(sourceWallet);
 
-        // Credit to destination
         destinationWallet.credit(request.getAmount());
         destinationWallet = walletRepository.save(destinationWallet);
 
-        // Create transaction record
         Transaction transaction = Transaction.builder()
                 .transactionId(generateTransactionId())
                 .amount(request.getAmount())
-                .type(Transaction.TransactionType.TRANSFER)
-                .status(Transaction.TransactionStatus.COMPLETED)
+                .type(TransactionType.TRANSFER)
+                .status(TransactionStatus.COMPLETED)
                 .description(request.getDescription() != null ? request.getDescription() : "Transfer")
                 .currency(sourceWallet.getCurrency())
                 .sourceWallet(sourceWallet)
                 .destinationWallet(destinationWallet)
                 .balanceBefore(sourceBalanceBefore)
                 .balanceAfter(sourceWallet.getBalance())
-                .ipAddress(getClientIp(httpRequest))
-                .userAgent(httpRequest.getHeader("User-Agent"))
+                .ipAddress(RequestUtil.getClientIp(httpRequest))
+                .userAgent(RequestUtil.getUserAgent(httpRequest))
                 .build();
 
         transaction = transactionRepository.save(transaction);
@@ -172,11 +202,64 @@ public class TransactionService {
         return convertToResponse(transaction);
     }
 
+    /**
+     * Persists a FAILED ledger entry (plus an audit entry) for an attempt rejected by a business
+     * rule. Runs after the failed transaction has rolled back. Never throws: the caller is about
+     * to rethrow the real business exception and that one must not be masked.
+     */
+    private void recordFailedAttempt(RejectedOperationException rejected, HttpServletRequest httpRequest) {
+        try {
+            transactionTemplate.executeWithoutResult(status -> {
+                Wallet source = rejected.sourceWalletId != null
+                        ? walletRepository.findById(rejected.sourceWalletId).orElse(null) : null;
+                Wallet destination = rejected.destinationWalletId != null
+                        ? walletRepository.findById(rejected.destinationWalletId).orElse(null) : null;
+                Wallet reference = source != null ? source : destination;
+                if (reference == null) {
+                    return;
+                }
+
+                String reason = rejected.getReason().getMessage();
+                Transaction failed = transactionRepository.save(Transaction.builder()
+                        .transactionId(generateTransactionId())
+                        .amount(rejected.amount)
+                        .type(rejected.type)
+                        .status(TransactionStatus.FAILED)
+                        .description(failureDescription(reason, rejected.description))
+                        .currency(reference.getCurrency())
+                        .sourceWallet(source)
+                        .destinationWallet(destination)
+                        // nothing moved: before == after
+                        .balanceBefore(reference.getBalance())
+                        .balanceAfter(reference.getBalance())
+                        .ipAddress(RequestUtil.getClientIp(httpRequest))
+                        .userAgent(RequestUtil.getUserAgent(httpRequest))
+                        .build());
+
+                auditService.logAction(rejected.type.name() + "_FAILED", "Transaction", failed.getId(),
+                        null, String.format("amount=%s; reason=%s", rejected.amount, reason), reason);
+            });
+        } catch (RuntimeException e) {
+            log.error("Could not record failed {} attempt (original failure: {})",
+                    rejected.type, rejected.getReason().getMessage(), e);
+        }
+    }
+
+    private static String failureDescription(String reason, String description) {
+        String text = "Failed: " + reason
+                + (description != null && !description.isBlank() ? " - " + description : "");
+        return text.length() > 500 ? text.substring(0, 500) : text;
+    }
+
+    // ------------------------------------------------------------------------------------
+    // Queries
+    // ------------------------------------------------------------------------------------
+
     @Transactional(readOnly = true)
     public Page<TransactionResponse> getTransactionsByWallet(String walletId, Pageable pageable) {
         Wallet wallet = walletRepository.findById(walletId)
                 .orElseThrow(() -> new WalletNotFoundException("Wallet not found: " + walletId));
-        SecurityUtil.checkOwnerOrAdmin(wallet.getUser() != null ? wallet.getUser().getId() : null);
+        SecurityUtil.checkOwnerOrAdmin(ownerId(wallet));
 
         return transactionRepository.findByWalletId(walletId, pageable)
                 .map(this::convertToResponse);
@@ -189,153 +272,235 @@ public class TransactionService {
         Wallet wallet = walletRepository.findById(walletId)
                 .orElseThrow(() -> new WalletNotFoundException("Wallet not found: " + walletId));
 
-        SecurityUtil.checkOwnerOrAdmin(wallet.getUser() != null ? wallet.getUser().getId() : null);
+        SecurityUtil.checkOwnerOrAdmin(ownerId(wallet));
 
-        BigDecimal totalDeposits = transactionRepository.sumDepositsByWallet(walletId);
-        BigDecimal totalWithdrawals = transactionRepository.sumWithdrawalsByWallet(walletId);
+        // Aggregates are computed by the database (SUM) instead of loading every
+        // transaction into memory. Only COMPLETED rows are summed, so reversed and failed
+        // operations are excluded and: balance = deposits - withdrawals - out + in.
+        BigDecimal totalDeposits = orZero(transactionRepository.sumDepositsByWallet(walletId));
+        BigDecimal totalWithdrawals = orZero(transactionRepository.sumWithdrawalsByWallet(walletId));
+        BigDecimal transfersOut = orZero(transactionRepository.sumTransfersSentByWallet(walletId));
+        BigDecimal transfersIn = orZero(transactionRepository.sumTransfersReceivedByWallet(walletId));
 
-        if (totalDeposits == null) totalDeposits = BigDecimal.ZERO;
-        if (totalWithdrawals == null) totalWithdrawals = BigDecimal.ZERO;
-
-        // Calculate total transfers
-        List<Transaction> transfersOut = transactionRepository.findTransfersBySourceWallet(walletId);
-        List<Transaction> transfersIn = transactionRepository.findTransfersByDestinationWallet(walletId);
-
-        BigDecimal totalTransfers = BigDecimal.ZERO;
-        for (Transaction t : transfersOut) {
-            if (t.getStatus() == Transaction.TransactionStatus.COMPLETED) {
-                totalTransfers = totalTransfers.add(t.getAmount());
-            }
-        }
-        for (Transaction t : transfersIn) {
-            if (t.getStatus() == Transaction.TransactionStatus.COMPLETED) {
-                totalTransfers = totalTransfers.add(t.getAmount());
-            }
-        }
-
-        List<Transaction> recentTransactions = transactionRepository.findByWalletId(walletId, Pageable.ofSize(10))
-                .getContent();
+        // One paged query yields both the 10 latest entries and the total count
+        // (Spring Data issues the COUNT itself only when the page is full).
+        Page<Transaction> recent = transactionRepository.findByWalletId(walletId, PageRequest.of(0, 10));
 
         return BalanceResponse.builder()
                 .totalBalance(wallet.getBalance())
                 .totalDeposits(totalDeposits)
                 .totalWithdrawals(totalWithdrawals)
-                .totalTransfers(totalTransfers)
-                .recentTransactions(recentTransactions.stream()
+                .totalTransfersOut(transfersOut)
+                .totalTransfersIn(transfersIn)
+                .recentTransactions(recent.getContent().stream()
                         .map(this::convertToResponse)
                         .collect(Collectors.toList()))
-                .totalTransactions((int) transactionRepository.findByWalletId(walletId, Pageable.unpaged()).getTotalElements())
+                .totalTransactions(recent.getTotalElements())
                 .build();
     }
 
+    // ------------------------------------------------------------------------------------
+    // Reversal
+    // ------------------------------------------------------------------------------------
+
+    /**
+     * Reverses a COMPLETED deposit / transfer / withdrawal by moving the money back.
+     * <p>
+     * Who may reverse:
+     * <ul>
+     *   <li>ADMIN: any reversible transaction;</li>
+     *   <li>the SENDER (owner of the source wallet) of a transfer or withdrawal, within
+     *       {@code finpay.reversal.user-window-minutes} of its creation;</li>
+     *   <li>nobody else - in particular not the recipient of a transfer, and not the owner of
+     *       a deposit (deposits are admin-only).</li>
+     * </ul>
+     * Concurrency: the transaction row and every wallet involved are locked before anything is
+     * read or changed. Wallets are locked in ID order (same as transfers) so reversals and
+     * transfers can never deadlock against each other, and two simultaneous reversals of the
+     * same transaction are serialized - the second sees REVERSED and is rejected.
+     */
     @Transactional
     public TransactionResponse reverseTransaction(String transactionId, HttpServletRequest httpRequest) {
         log.info("Reversing transaction: {}", transactionId);
 
-        Transaction originalTransaction = transactionRepository.findById(transactionId)
-                .orElseThrow(() -> new IllegalArgumentException("Transaction not found: " + transactionId));
+        Transaction original = transactionRepository.findByIdWithLock(transactionId)
+                .orElseThrow(() -> new TransactionNotFoundException("Transaction not found: " + transactionId));
 
-        // Only a user who owns one of the wallets involved in the transaction (or an
-        // admin) may reverse it - otherwise anyone could reverse anyone else's transfers.
-        boolean ownsSource = originalTransaction.getSourceWallet() != null
-                && originalTransaction.getSourceWallet().getUser() != null
-                && originalTransaction.getSourceWallet().getUser().getId().equals(SecurityUtil.getCurrentUserId());
-        boolean ownsDestination = originalTransaction.getDestinationWallet() != null
-                && originalTransaction.getDestinationWallet().getUser() != null
-                && originalTransaction.getDestinationWallet().getUser().getId().equals(SecurityUtil.getCurrentUserId());
+        // getId() on a lazy proxy does not load the wallet, so wallet state is only ever read
+        // AFTER the row lock below has been taken.
+        String sourceId = original.getSourceWallet() != null ? original.getSourceWallet().getId() : null;
+        String destinationId = original.getDestinationWallet() != null ? original.getDestinationWallet().getId() : null;
 
-        if (!ownsSource && !ownsDestination && !SecurityUtil.isAdmin()) {
-            throw new org.springframework.security.access.AccessDeniedException(
-                    "You don't have permission to reverse this transaction");
+        Map<String, Wallet> locked = lockWallets(
+                Stream.of(sourceId, destinationId).filter(Objects::nonNull).toList());
+        Wallet source = sourceId != null ? locked.get(sourceId) : null;
+        Wallet destination = destinationId != null ? locked.get(destinationId) : null;
+
+        authorizeReversal(original, source);
+
+        if (original.getType() == TransactionType.REVERSAL) {
+            throw new ReversalNotAllowedException("A reversal transaction cannot itself be reversed");
+        }
+        if (original.getStatus() == TransactionStatus.REVERSED) {
+            throw new ReversalNotAllowedException("Transaction already reversed");
+        }
+        if (original.getStatus() != TransactionStatus.COMPLETED) {
+            throw new ReversalNotAllowedException("Only completed transactions can be reversed");
         }
 
-        if (originalTransaction.getStatus() == Transaction.TransactionStatus.REVERSED) {
-            throw new IllegalStateException("Transaction already reversed");
-        }
+        Transaction reversal = switch (original.getType()) {
+            case DEPOSIT -> reverseDeposit(original, destination, httpRequest);
+            case TRANSFER -> reverseTransfer(original, source, destination, httpRequest);
+            case WITHDRAWAL -> reverseWithdrawal(original, source, httpRequest);
+            default -> throw new ReversalNotAllowedException(
+                    "Transactions of type " + original.getType() + " cannot be reversed");
+        };
 
-        if (originalTransaction.getStatus() != Transaction.TransactionStatus.COMPLETED) {
-            throw new IllegalStateException("Only completed transactions can be reversed");
-        }
+        // Capture the status BEFORE changing it: the audit entry used to record the new status
+        // as the "old" value.
+        TransactionStatus previousStatus = original.getStatus();
+        original.setStatus(TransactionStatus.REVERSED);
+        transactionRepository.save(original);
 
-        Transaction reversal = null;
+        auditService.logAction("REVERSE_TRANSACTION", "Transaction", original.getId(),
+                previousStatus.name(), TransactionStatus.REVERSED.name(),
+                "Reversed by " + reversal.getTransactionId());
 
-        if (originalTransaction.getType() == Transaction.TransactionType.DEPOSIT) {
-            // Reverse deposit: withdraw from destination wallet
-            Wallet wallet = originalTransaction.getDestinationWallet();
-            BigDecimal balanceBefore = wallet.getBalance();
-            wallet.debit(originalTransaction.getAmount());
-            wallet = walletRepository.save(wallet);
-
-            reversal = createReversalTransaction(originalTransaction, wallet, null,
-                    balanceBefore, wallet.getBalance(), httpRequest);
-        } else if (originalTransaction.getType() == Transaction.TransactionType.TRANSFER) {
-            // Reverse transfer: transfer back
-            Wallet sourceWallet = originalTransaction.getSourceWallet();
-            Wallet destinationWallet = originalTransaction.getDestinationWallet();
-
-            BigDecimal sourceBalanceBefore = sourceWallet.getBalance();
-            BigDecimal destBalanceBefore = destinationWallet.getBalance();
-
-            // Reverse the transfer: debit from destination, credit to source
-            destinationWallet.debit(originalTransaction.getAmount());
-            sourceWallet.credit(originalTransaction.getAmount());
-
-            walletRepository.save(sourceWallet);
-            walletRepository.save(destinationWallet);
-
-            reversal = createReversalTransaction(originalTransaction, sourceWallet, destinationWallet,
-                    sourceBalanceBefore, sourceWallet.getBalance(), httpRequest);
-        } else if (originalTransaction.getType() == Transaction.TransactionType.WITHDRAWAL) {
-            // Reverse withdrawal: deposit back
-            Wallet wallet = originalTransaction.getSourceWallet();
-            BigDecimal balanceBefore = wallet.getBalance();
-            wallet.credit(originalTransaction.getAmount());
-            wallet = walletRepository.save(wallet);
-
-            reversal = createReversalTransaction(originalTransaction, null, wallet,
-                    balanceBefore, wallet.getBalance(), httpRequest);
-        }
-
-        originalTransaction.setStatus(Transaction.TransactionStatus.REVERSED);
-        transactionRepository.save(originalTransaction);
-
-        auditService.logAction("REVERSE_TRANSACTION", "Transaction", transactionId,
-                originalTransaction.getStatus().name(), "REVERSED", "Transaction reversed");
-
-        return convertToResponse(reversal != null ? reversal : originalTransaction);
+        return convertToResponse(reversal);
     }
 
-    private Transaction createReversalTransaction(Transaction original, Wallet sourceWallet,
-                                                  Wallet destinationWallet, BigDecimal balanceBefore,
-                                                  BigDecimal balanceAfter, HttpServletRequest httpRequest) {
-        Transaction reversal = Transaction.builder()
+    private void authorizeReversal(Transaction original, Wallet source) {
+        if (SecurityUtil.isAdmin()) {
+            return;
+        }
+
+        boolean isSender = source != null
+                && source.getUser() != null
+                && source.getUser().getId().equals(SecurityUtil.getCurrentUserId());
+
+        if (original.getType() == TransactionType.DEPOSIT || !isSender) {
+            throw new AccessDeniedException("You don't have permission to reverse this transaction");
+        }
+
+        LocalDateTime deadline = original.getCreatedAt().plusMinutes(reversalUserWindowMinutes);
+        if (LocalDateTime.now().isAfter(deadline)) {
+            throw new ReversalNotAllowedException(String.format(
+                    "The %d-minute window to reverse this transaction has expired. Please contact an administrator.",
+                    reversalUserWindowMinutes));
+        }
+    }
+
+    private Transaction reverseDeposit(Transaction original, Wallet wallet, HttpServletRequest httpRequest) {
+        requireNotClosed(wallet);
+        requireFundsForReversal(wallet, original.getAmount(),
+                "The wallet no longer holds enough balance to reverse this deposit");
+
+        BigDecimal balanceBefore = wallet.getBalance();
+        wallet.debit(original.getAmount());
+        walletRepository.save(wallet);
+
+        return saveReversal(original, wallet, null, balanceBefore, wallet.getBalance(), httpRequest);
+    }
+
+    private Transaction reverseTransfer(Transaction original, Wallet source, Wallet destination,
+                                        HttpServletRequest httpRequest) {
+        requireNotClosed(source);
+        requireNotClosed(destination);
+        // Business rule: if the recipient already spent the money the transfer cannot be undone.
+        requireFundsForReversal(destination, original.getAmount(),
+                "The recipient no longer has enough balance to reverse this transfer");
+
+        BigDecimal debitedBalanceBefore = destination.getBalance();
+        destination.debit(original.getAmount());
+        source.credit(original.getAmount());
+        walletRepository.save(destination);
+        walletRepository.save(source);
+
+        // Money flows destination -> source, so the reversal's source is the original recipient.
+        return saveReversal(original, destination, source,
+                debitedBalanceBefore, destination.getBalance(), httpRequest);
+    }
+
+    private Transaction reverseWithdrawal(Transaction original, Wallet wallet, HttpServletRequest httpRequest) {
+        requireNotClosed(wallet);
+
+        BigDecimal balanceBefore = wallet.getBalance();
+        wallet.credit(original.getAmount());
+        walletRepository.save(wallet);
+
+        return saveReversal(original, null, wallet, balanceBefore, wallet.getBalance(), httpRequest);
+    }
+
+    /**
+     * Writes the REVERSAL ledger entry. Same convention as transfers: source = wallet that was
+     * debited, destination = wallet that was credited, and balanceBefore/After describe the
+     * DEBITED wallet (or the credited one when nothing was debited, i.e. a withdrawal reversal).
+     */
+    private Transaction saveReversal(Transaction original, Wallet debited, Wallet credited,
+                                     BigDecimal balanceBefore, BigDecimal balanceAfter,
+                                     HttpServletRequest httpRequest) {
+        return transactionRepository.save(Transaction.builder()
                 .transactionId(generateTransactionId())
                 .amount(original.getAmount())
-                .type(Transaction.TransactionType.REVERSAL)
-                .status(Transaction.TransactionStatus.COMPLETED)
+                .type(TransactionType.REVERSAL)
+                .status(TransactionStatus.COMPLETED)
                 .description("Reversal of transaction: " + original.getTransactionId())
                 .currency(original.getCurrency())
-                .sourceWallet(sourceWallet != null ? sourceWallet : original.getDestinationWallet())
-                .destinationWallet(destinationWallet != null ? destinationWallet : original.getSourceWallet())
+                .sourceWallet(debited)
+                .destinationWallet(credited)
                 .balanceBefore(balanceBefore)
                 .balanceAfter(balanceAfter)
-                .ipAddress(getClientIp(httpRequest))
-                .userAgent(httpRequest.getHeader("User-Agent"))
-                .build();
+                .ipAddress(RequestUtil.getClientIp(httpRequest))
+                .userAgent(RequestUtil.getUserAgent(httpRequest))
+                .build());
+    }
 
-        return transactionRepository.save(reversal);
+    // ------------------------------------------------------------------------------------
+    // Helpers
+    // ------------------------------------------------------------------------------------
+
+    /**
+     * Locks the given wallets (SELECT ... FOR UPDATE) in ascending ID order. Every code path that
+     * locks more than one wallet must go through here: a single global lock order is what rules
+     * out deadlocks between concurrent A->B / B->A operations.
+     */
+    private Map<String, Wallet> lockWallets(List<String> walletIds) {
+        Map<String, Wallet> locked = new LinkedHashMap<>();
+        for (String id : new TreeSet<>(walletIds)) {
+            locked.put(id, walletRepository.findByIdWithLock(id)
+                    .orElseThrow(() -> new WalletNotFoundException("Wallet not found: " + id)));
+        }
+        return locked;
+    }
+
+    private static String ownerId(Wallet wallet) {
+        return wallet.getUser() != null ? wallet.getUser().getId() : null;
+    }
+
+    private static void requireActive(Wallet wallet, String message) {
+        if (wallet.getStatus() != Wallet.WalletStatus.ACTIVE) {
+            throw new IllegalStateException(message);
+        }
+    }
+
+    private static void requireNotClosed(Wallet wallet) {
+        if (wallet.getStatus() == Wallet.WalletStatus.CLOSED) {
+            throw new ReversalNotAllowedException("Wallet " + wallet.getWalletNumber() + " is closed");
+        }
+    }
+
+    private static void requireFundsForReversal(Wallet wallet, BigDecimal amount, String message) {
+        if (wallet.getBalance().compareTo(amount) < 0) {
+            throw new ReversalNotAllowedException(message);
+        }
+    }
+
+    private static BigDecimal orZero(BigDecimal value) {
+        return value != null ? value : BigDecimal.ZERO;
     }
 
     private String generateTransactionId() {
         return "TXN" + System.currentTimeMillis() + UUID.randomUUID().toString().substring(0, 6).toUpperCase();
-    }
-
-    private String getClientIp(HttpServletRequest request) {
-        String ip = request.getHeader("X-Forwarded-For");
-        if (ip == null || ip.isEmpty()) {
-            ip = request.getRemoteAddr();
-        }
-        return ip;
     }
 
     private TransactionResponse convertToResponse(Transaction transaction) {
@@ -355,5 +520,35 @@ public class TransactionService {
                 .balanceAfter(transaction.getBalanceAfter())
                 .createdAt(transaction.getCreatedAt())
                 .build();
+    }
+
+    /**
+     * Internal signal: a deposit/transfer was rejected by a business rule AFTER ownership was
+     * verified. It rolls back the money-movement transaction and carries what is needed to
+     * write the FAILED ledger entry; the public methods unwrap it and rethrow the original
+     * exception, so it never reaches the exception handler.
+     */
+    private static final class RejectedOperationException extends RuntimeException {
+        private final transient RuntimeException reason;
+        private final TransactionType type;
+        private final BigDecimal amount;
+        private final String description;
+        private final String sourceWalletId;
+        private final String destinationWalletId;
+
+        RejectedOperationException(RuntimeException reason, TransactionType type, BigDecimal amount,
+                                   String description, String sourceWalletId, String destinationWalletId) {
+            super(reason.getMessage(), reason, false, false);
+            this.reason = reason;
+            this.type = type;
+            this.amount = amount;
+            this.description = description;
+            this.sourceWalletId = sourceWalletId;
+            this.destinationWalletId = destinationWalletId;
+        }
+
+        RuntimeException getReason() {
+            return reason;
+        }
     }
 }

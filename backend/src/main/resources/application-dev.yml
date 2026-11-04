@@ -1,6 +1,6 @@
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/finpay_dev
+    url: jdbc:postgresql://localhost:5432/finpay
     username: finpay_user
     password: finpay_password
   jpa:
@@ -11,6 +11,10 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+
+finpay:
+  seed:
+    demo-users: true
 
 jwt:
   secret: devSecretKeyForTestingOnly12345678901234567890

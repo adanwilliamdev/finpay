@@ -28,6 +28,8 @@ services:
       DB_PASSWORD: finpay_password
       JWT_SECRET: 404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970
       PORT: 8080
+      # Demo accounts (admin@finpay.com / user@finpay.com). Remove for any real deployment.
+      SEED_DEMO_USERS: "true"
     ports:
       - "8080:8080"
     depends_on:

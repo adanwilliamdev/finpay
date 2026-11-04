@@ -3,7 +3,6 @@ package com.finpay.service;
 import com.finpay.dto.response.WalletResponse;
 import com.finpay.entity.User;
 import com.finpay.entity.Wallet;
-import com.finpay.exception.UserNotFoundException;
 import com.finpay.exception.WalletNotFoundException;
 import com.finpay.repository.UserRepository;
 import com.finpay.repository.WalletRepository;
