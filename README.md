@@ -1,8 +1,40 @@
-# 💳 FinPay - Digital Wallet & Ledger Platform
+# 💳 FinPay — Digital Wallet & Ledger Platform
 
-Plataforma de **carteira digital e gerenciamento de transações financeiras**, desenvolvida com **Java + Spring Boot** no backend e **React** no frontend.
+<p align="center">
+  <strong>Plataforma de carteira digital e gerenciamento de transações financeiras.</strong>
+  <br>
+  Desenvolvida com Java 21, Spring Boot e React, com foco em segurança, integridade financeira e consistência de dados.
+</p>
 
-O projeto utiliza autenticação JWT, PostgreSQL, Flyway, controle de concorrência, auditoria e documentação OpenAPI.
+<p align="center">
+  <img src="https://img.shields.io/badge/Java-21-ED8B00?style=flat-square&logo=openjdk&logoColor=white" alt="Java 21">
+  <img src="https://img.shields.io/badge/Spring_Boot-3.2.3-6DB33F?style=flat-square&logo=springboot&logoColor=white" alt="Spring Boot">
+  <img src="https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React 18">
+  <img src="https://img.shields.io/badge/PostgreSQL-Database-4169E1?style=flat-square&logo=postgresql&logoColor=white" alt="PostgreSQL">
+  <img src="https://img.shields.io/badge/Docker-Containerized-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker">
+  <img src="https://img.shields.io/badge/License-MIT-yellow?style=flat-square" alt="MIT License">
+</p>
+
+---
+
+## 📌 Sobre o Projeto
+
+O **FinPay** é uma plataforma full stack de carteira digital desenvolvida para simular operações financeiras de uma aplicação bancária moderna.
+
+O sistema permite o gerenciamento de carteiras, depósitos, transferências entre usuários e acompanhamento de movimentações financeiras por meio de um ledger transacional.
+
+O projeto foi desenvolvido com atenção especial à **integridade dos dados financeiros**, utilizando mecanismos de controle de concorrência, bloqueios de registros no banco de dados, auditoria e regras de reversão de operações.
+
+### 🎯 Principais diferenciais
+
+- Arquitetura Full Stack com Java, Spring Boot e React.
+- Autenticação e autorização utilizando JWT.
+- Ledger para registro e rastreabilidade de operações financeiras.
+- Controle de concorrência com bloqueios pessimistas e otimistas.
+- Reversão de transações com validação de regras de negócio.
+- Auditoria de operações e rastreamento de falhas.
+- Versionamento do banco de dados com Flyway.
+- Documentação da API com Swagger/OpenAPI.
 
 ---
 
@@ -10,73 +42,227 @@ O projeto utiliza autenticação JWT, PostgreSQL, Flyway, controle de concorrên
 
 ### Backend
 
-| Tecnologia        | Utilização               |
-| ----------------- | ------------------------ |
-| Java 21           | Linguagem principal      |
-| Spring Boot 3.2.3 | Framework                |
-| Spring Security   | Segurança e autenticação |
-| Spring Data JPA   | Persistência             |
-| PostgreSQL        | Banco de dados           |
-| Flyway            | Migrations               |
-| JWT               | Autenticação             |
-| Lombok            | Redução de boilerplate   |
-| OpenAPI / Swagger | Documentação da API      |
+| Tecnologia | Utilização |
+|---|---|
+| Java 21 | Linguagem principal |
+| Spring Boot 3.2.3 | Framework backend |
+| Spring Security | Segurança e autenticação |
+| Spring Data JPA | Persistência de dados |
+| PostgreSQL | Banco de dados relacional |
+| Flyway | Versionamento e migrations |
+| JWT | Autenticação baseada em tokens |
+| Lombok | Redução de código boilerplate |
+| Jakarta Validation | Validação de dados |
+| OpenAPI / Swagger | Documentação da API |
 
 ### Frontend
 
-| Tecnologia      | Utilização          |
-| --------------- | ------------------- |
-| React 18        | Interface           |
-| Material UI     | Componentes         |
-| React Router    | Navegação           |
-| Recharts        | Gráficos            |
-| Axios           | Comunicação com API |
-| React Hook Form | Formulários         |
-| Yup             | Validação           |
-| React Toastify  | Notificações        |
+| Tecnologia | Utilização |
+|---|---|
+| React 18 | Biblioteca de interface |
+| Material UI | Componentes visuais |
+| React Router | Navegação |
+| Recharts | Gráficos e indicadores |
+| Axios | Comunicação HTTP com a API |
+| React Hook Form | Gerenciamento de formulários |
+| Yup | Validação de formulários |
+| React Toastify | Notificações |
+
+### Infraestrutura e ferramentas
+
+<p>
+  <img src="https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker">
+  <img src="https://img.shields.io/badge/Docker_Compose-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker Compose">
+  <img src="https://img.shields.io/badge/Maven-C71A36?style=flat-square&logo=apachemaven&logoColor=white" alt="Maven">
+  <img src="https://img.shields.io/badge/Git-F05032?style=flat-square&logo=git&logoColor=white" alt="Git">
+  <img src="https://img.shields.io/badge/Swagger-85EA2D?style=flat-square&logo=swagger&logoColor=black" alt="Swagger">
+</p>
 
 ---
 
-## 📦 Pré-requisitos
+## ✨ Funcionalidades
 
-* Docker
-* Docker Compose
-* Java 21
-* Node.js 18+
-* PostgreSQL 15+ *(apenas para execução local)*
+### 💰 Gestão financeira
+
+- Cadastro e gerenciamento de usuários.
+- Criação e gerenciamento de carteiras digitais.
+- Depósitos em carteiras.
+- Transferências entre usuários.
+- Consulta de saldo.
+- Histórico completo de transações.
+- Reversão de operações financeiras.
+- Registro de operações rejeitadas.
+
+### 📊 Dashboard financeiro
+
+- Visualização do saldo disponível.
+- Indicadores de movimentação financeira.
+- Gráficos de depósitos e transferências.
+- Histórico de movimentações.
+- Interface responsiva.
+
+### 🔐 Segurança
+
+- Autenticação utilizando JWT.
+- Criptografia de senhas com BCrypt.
+- Controle de acesso por perfil (ADMIN e USER).
+- Configuração de CORS.
+- Validação de dados com Jakarta Validation.
+- Tratamento global de exceções.
+- Proteção de operações financeiras concorrentes.
 
 ---
 
-## 🐳 Executando com Docker
+## 🧠 Diferenciais Técnicos
 
-### 1. Clone o repositório
+### 1. Ledger financeiro
+
+Todas as operações financeiras são registradas no ledger, garantindo rastreabilidade das movimentações.
+
+O sistema registra depósitos, transferências, reversões e tentativas de operações rejeitadas.
+
+Os registros de operações malsucedidas recebem status `FAILED`, incluindo o motivo da rejeição, sem modificar os saldos das carteiras.
+
+### 2. Controle de concorrência
+
+O sistema utiliza mecanismos de controle de concorrência para proteger operações financeiras simultâneas.
+
+- **Pessimistic Lock:** bloqueio de registros utilizando `SELECT FOR UPDATE`.
+- **Optimistic Lock:** controle de alterações concorrentes.
+- **Ordenação de bloqueios:** carteiras bloqueadas em ordem de ID para reduzir riscos de deadlock.
+- **Transações atômicas:** operações financeiras executadas dentro de transações de banco de dados.
+
+### 3. Reversão de transações
+
+O FinPay implementa um mecanismo de reversão financeira com regras específicas de autorização.
+
+| Perfil | Permissão |
+|---|---|
+| ADMIN | Pode reverter depósitos, transferências e saques concluídos |
+| Remetente | Pode reverter suas transferências e saques dentro da janela permitida |
+| Destinatário | Não pode reverter transferências recebidas |
+| Usuário comum | Não pode reverter depósitos |
+
+A reversão:
+
+- Marca a transação original como `REVERSED`.
+- Cria uma nova transação do tipo `REVERSAL`.
+- Bloqueia as carteiras envolvidas antes de modificar os saldos.
+- Verifica se o valor recebido ainda está disponível.
+- Impede reversões duplicadas.
+
+Por padrão, usuários comuns possuem uma janela de reversão de 30 minutos, configurável por variável de ambiente.
+
+Rejeições por regras de negócio retornam `409 Conflict`, enquanto operações sem autorização retornam `403 Forbidden`.
+
+### 4. Auditoria e integridade
+
+- Registro de operações financeiras.
+- Histórico de operações rejeitadas.
+- Rastreabilidade das reversões.
+- Validação de saldo antes das movimentações.
+- Integridade dos registros por meio de transações de banco de dados.
+
+### 5. Resumo financeiro
+
+O endpoint de saldo calcula os indicadores diretamente no banco de dados, considerando somente transações com status `COMPLETED`.
+
+Indicadores disponíveis:
+
+- `totalDeposits`
+- `totalWithdrawals`
+- `totalTransfersOut`
+- `totalTransfersIn`
+- `totalTransactions`
+
+Os valores de transferências enviadas e recebidas são apresentados separadamente.
+
+---
+
+## 🏗️ Arquitetura do Projeto
+
+```text
+finpay/
+│
+├── backend/
+│   ├── src/
+│   │   └── main/
+│   │       ├── java/com/finpay/
+│   │       │   ├── config/
+│   │       │   ├── controller/
+│   │       │   ├── dto/
+│   │       │   ├── entity/
+│   │       │   ├── repository/
+│   │       │   ├── service/
+│   │       │   ├── security/
+│   │       │   └── exception/
+│   │       │
+│   │       └── resources/
+│   │           ├── application.yml
+│   │           └── db/migration/
+│   │
+│   ├── pom.xml
+│   └── mvnw
+│
+├── frontend/
+│   ├── public/
+│   ├── src/
+│   │   ├── components/
+│   │   ├── context/
+│   │   ├── hooks/
+│   │   ├── services/
+│   │   └── utils/
+│   │
+│   └── package.json
+│
+└── docker-compose.yml
+```
+
+---
+
+## ⚙️ Executando o Projeto
+
+### Pré-requisitos
+
+- Docker
+- Docker Compose
+- Java 21
+- Node.js 18+
+- PostgreSQL 15+ (para execução local)
+
+### 🐳 Executando com Docker
+
+**1. Clone o repositório**
 
 ```bash
 git clone https://github.com/adanwilliamdev/finpay.git
+```
+
+**2. Acesse o diretório**
+
+```bash
 cd finpay
 ```
 
-### 2. Execute os containers
+**3. Inicie os containers**
 
 ```bash
 docker-compose up -d
 ```
 
-### 3. Acesse a aplicação
+**4. Acesse a aplicação**
 
-| Serviço     | URL                                         |
-| ----------- | ------------------------------------------- |
-| Frontend    | `http://localhost:3000`                     |
-| Backend API | `http://localhost:8080/api`                 |
-| Swagger UI  | `http://localhost:8080/api/swagger-ui.html` |
+| Serviço | Endereço |
+|---|---|
+| Frontend | http://localhost:3000 |
+| Backend API | http://localhost:8080/api |
+| Swagger UI | http://localhost:8080/api/swagger-ui.html |
 
----
+### 💻 Executando localmente
 
-## 💻 Desenvolvimento Local
+#### Backend
 
-### Backend
-
-Configure o PostgreSQL:
+Configure o banco de dados PostgreSQL:
 
 ```sql
 CREATE DATABASE finpay;
@@ -96,7 +282,9 @@ cd backend
 ./mvnw spring-boot:run
 ```
 
-### Frontend
+#### Frontend
+
+Em outro terminal:
 
 ```bash
 cd frontend
@@ -106,101 +294,68 @@ npm start
 
 ---
 
-## 🔐 Credenciais de Demonstração
+## 🔑 Credenciais de Demonstração
 
-| Perfil | E-mail             | Senha       |
-| ------ | ------------------ | ----------- |
-| Admin  | `admin@finpay.com` | `Admin@123` |
-| User   | `user@finpay.com`  | `User@123`  |
+O projeto disponibiliza dois perfis para testes:
 
-> ⚠️ Essas credenciais são destinadas apenas ao ambiente de desenvolvimento/demonstração.
+| Perfil | E-mail | Senha |
+|---|---|---|
+| ADMIN | `admin@finpay.com` | `Admin@123` |
+| USER | `user@finpay.com` | `User@123` |
 
-As contas são criadas na inicialização por um *seeder* (`DemoDataSeeder`), **não** por migration, para que nenhum
-ambiente receba um admin com senha pública por acidente. O seeder só roda quando `SEED_DEMO_USERS=true`
-(`finpay.seed.demo-users`):
+> ⚠️ Credenciais destinadas exclusivamente a ambientes de desenvolvimento e demonstração.
 
-* `docker compose up` → ativado (definido no `docker-compose.yml`);
-* profile `dev` (`--spring.profiles.active=dev`) → ativado;
-* qualquer outro caso → **desativado** (padrão). Nunca habilite em produção.
+### Configuração do Seeder
 
-É idempotente: contas já existentes não são alteradas. O usuário `user@finpay.com` começa com R$ 1.000,00
-(registrado como um depósito no ledger) e a carteira do admin começa zerada.
+As contas de demonstração são criadas pelo `DemoDataSeeder`, e não por migrations.
 
----
+A inicialização depende da configuração `SEED_DEMO_USERS=true` (`finpay.seed.demo-users`).
 
-## 📁 Estrutura do Projeto
+| Ambiente | Comportamento |
+|---|---|
+| Docker Compose | Ativado |
+| Profile `dev` | Ativado |
+| Outros ambientes | Desativado por padrão |
 
-```text
-finpay/
-├── backend/
-│   ├── src/
-│   │   └── main/
-│   │       ├── java/com/finpay/
-│   │       │   ├── config/
-│   │       │   ├── controller/
-│   │       │   ├── dto/
-│   │       │   ├── entity/
-│   │       │   ├── repository/
-│   │       │   ├── service/
-│   │       │   ├── security/
-│   │       │   └── exception/
-│   │       │
-│   │       └── resources/
-│   │           ├── application.yml
-│   │           └── db/migration/
-│   │
-│   └── pom.xml
-│
-├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   ├── context/
-│   │   ├── hooks/
-│   │   ├── services/
-│   │   └── utils/
-│   └── public/
-│
-└── docker-compose.yml
-```
+O seeder é idempotente: usuários existentes não têm suas informações alteradas.
+
+**Saldos iniciais:**
+- USER: R$ 1.000,00, registrados como depósito no ledger.
+- ADMIN: R$ 0,00.
+
+Nunca habilite o seeder de demonstração em produção.
 
 ---
 
-## 🔄 Funcionalidades
+## 📡 API Endpoints
 
-### Backend
+### 🔐 Authentication
 
-* ✅ Registro e autenticação de usuários com JWT
-* ✅ Gerenciamento de carteiras digitais
-* ✅ Transferências entre contas
-* ✅ Histórico de transações
-* ✅ Controle de concorrência
-* ✅ Bloqueios pessimistas e otimistas
-* ✅ Migrations com Flyway
-* ✅ Auditoria de operações
-* ✅ Tratamento global de exceções
-* ✅ Documentação com Swagger/OpenAPI
+| Método | Endpoint | Descrição |
+|---|---|---|
+| `POST` | `/api/auth/register` | Registrar usuário |
+| `POST` | `/api/auth/login` | Realizar login |
+| `POST` | `/api/auth/logout` | Realizar logout |
 
-### Frontend
+### 💳 Wallets
 
-* ✅ Login e registro
-* ✅ Dashboard financeiro
-* ✅ Gráficos e indicadores
-* ✅ Visualização da carteira
-* ✅ Transferências com validação
-* ✅ Histórico de transações
-* ✅ Máscaras de moeda
-* ✅ Interface responsiva
+| Método | Endpoint | Descrição |
+|---|---|---|
+| `GET` | `/api/wallets` | Listar carteiras (ADMIN) |
+| `GET` | `/api/wallets/{id}` | Consultar carteira |
+| `GET` | `/api/wallets/user/{userId}` | Consultar carteira por usuário |
+| `POST` | `/api/wallets/{id}/block` | Bloquear carteira (ADMIN) |
+| `POST` | `/api/wallets/{id}/activate` | Ativar carteira (ADMIN) |
 
----
+### 💸 Transactions
 
-## 🛡️ Segurança
-
-* 🔐 Autenticação baseada em JWT
-* 🔑 Senhas protegidas com BCrypt
-* 🌐 CORS configurado
-* 🛡️ Validação de dados com Jakarta Validation
-* 🔒 Controle de concorrência em operações financeiras
-* 🚧 Rate limiting *(planejado)*
+| Método | Endpoint | Descrição |
+|---|---|---|
+| `POST` | `/api/transactions/deposit` | Realizar depósito |
+| `POST` | `/api/transactions/transfer` | Realizar transferência |
+| `GET` | `/api/transactions/wallet/{walletId}` | Listar transações |
+| `GET` | `/api/transactions/wallet/{walletId}/balance` | Consultar saldo e indicadores |
+| `POST` | `/api/transactions/{id}/reverse` | Reverter transação |
 
 ---
 
@@ -222,79 +377,29 @@ npm test
 
 ---
 
-## 📝 API Endpoints
+## 🗺️ Melhorias Futuras
 
-### 🔑 Authentication
-
-| Método | Endpoint             | Descrição         |
-| ------ | -------------------- | ----------------- |
-| `POST` | `/api/auth/register` | Registrar usuário |
-| `POST` | `/api/auth/login`    | Realizar login    |
-| `POST` | `/api/auth/logout`   | Realizar logout   |
-
-### 💰 Wallets
-
-| Método | Endpoint                     | Descrição                   |
-| ------ | ---------------------------- | --------------------------- |
-| `GET`  | `/api/wallets`               | Listar carteiras *(Admin)*  |
-| `GET`  | `/api/wallets/{id}`          | Obter carteira              |
-| `GET`  | `/api/wallets/user/{userId}` | Obter carteira por usuário  |
-| `POST` | `/api/wallets/{id}/block`    | Bloquear carteira *(Admin)* |
-| `POST` | `/api/wallets/{id}/activate` | Ativar carteira *(Admin)*   |
-
-### 💸 Transactions
-
-| Método | Endpoint                                      | Descrição              |
-| ------ | --------------------------------------------- | ---------------------- |
-| `POST` | `/api/transactions/deposit`                   | Realizar depósito      |
-| `POST` | `/api/transactions/transfer`                  | Realizar transferência |
-| `GET`  | `/api/transactions/wallet/{walletId}`         | Listar transações      |
-| `GET`  | `/api/transactions/wallet/{walletId}/balance` | Consultar saldo        |
-| `POST` | `/api/transactions/{id}/reverse`              | Reverter transação     |
+- [ ] Implementação de Rate Limiting.
+- [ ] Idempotência de requisições financeiras.
+- [ ] Integração com serviços externos de pagamento.
+- [ ] Notificações de movimentações financeiras.
+- [ ] Testes de carga e concorrência.
+- [ ] Pipeline de CI/CD.
 
 ---
 
-### ↩️ Regras de reversão
-
-`POST /api/transactions/{id}/reverse` devolve o dinheiro e marca a transação original como `REVERSED`,
-gerando uma transação `REVERSAL` (origem = carteira debitada, destino = carteira creditada).
-
-| Quem                                         | Pode reverter                                                                 |
-| -------------------------------------------- | ----------------------------------------------------------------------------- |
-| `ADMIN`                                      | Qualquer depósito, transferência ou saque `COMPLETED`                         |
-| Remetente (dono da carteira de origem)       | Transferência/saque próprios, em até `finpay.reversal.user-window-minutes` (padrão 30 min, env `REVERSAL_USER_WINDOW_MINUTES`) |
-| Destinatário de uma transferência            | ❌ Nunca (`403`)                                                              |
-| Dono de um depósito                          | ❌ Depósitos só podem ser revertidos por admin (`403`)                        |
-
-Rejeições de regra de negócio retornam `409 Conflict` com mensagem explícita: transação já revertida, uma
-`REVERSAL` não pode ser revertida, janela expirada, carteira fechada, ou destinatário que já gastou o valor.
-A transação e todas as carteiras envolvidas são bloqueadas (`SELECT … FOR UPDATE`, carteiras em ordem de ID)
-antes de qualquer alteração, então reversões e transferências concorrentes não geram corrida nem deadlock.
-
-### ❌ Tentativas falhas
-
-Transferências e depósitos rejeitados por regra de negócio (saldo insuficiente, carteira inativa, moedas
-diferentes) deixam um registro `FAILED` no ledger (e no audit log) com o motivo na descrição; nenhum saldo é
-alterado. Esses registros só aparecem no extrato da carteira **de origem**. O status `PENDING` segue reservado
-para fluxos assíncronos futuros.
-
-### 📊 Resumo de saldo
-
-`GET /api/transactions/wallet/{id}/balance` retorna `totalDeposits`, `totalWithdrawals`, `totalTransfersOut`
-(enviadas), `totalTransfersIn` (recebidas) e `totalTransactions`, calculados com `SUM`/`COUNT` no banco
-(somente transações `COMPLETED`). *Mudança:* o campo `totalTransfers` foi substituído por `totalTransfersOut`
-e `totalTransfersIn`.
-
 ## 🤝 Contribuindo
 
+Contribuições são bem-vindas!
+
 1. Faça um fork do projeto.
-2. Crie uma branch:
+2. Crie uma branch para sua funcionalidade:
 
 ```bash
 git checkout -b feature/AmazingFeature
 ```
 
-3. Faça o commit:
+3. Faça suas alterações e commit:
 
 ```bash
 git commit -m "Add AmazingFeature"
@@ -312,4 +417,14 @@ git push origin feature/AmazingFeature
 
 ## 📄 Licença
 
-Este projeto está sob a licença **MIT**.
+Este projeto está licenciado sob a **MIT License**.
+
+---
+
+<p align="center">
+  Desenvolvido por <strong>Adan William</strong>
+  <br>
+  <a href="https://github.com/adanwilliamdev">GitHub</a>
+  &nbsp;•&nbsp;
+  <a href="https://adanwilliamdev.github.io/">Portfólio</a>
+</p>
