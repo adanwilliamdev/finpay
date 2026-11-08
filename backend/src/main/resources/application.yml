@@ -24,6 +24,7 @@ spring:
         order_inserts: true
         order_updates: true
     show-sql: false
+    open-in-view: false
 
   flyway:
     enabled: true
@@ -37,23 +38,28 @@ spring:
       write-dates-as-timestamps: false
 
 finpay:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:3001}
   seed:
     # Creates admin@finpay.com / user@finpay.com on startup. Off by default; NEVER enable in production.
     demo-users: ${SEED_DEMO_USERS:false}
   reversal:
     # How long after a transfer/withdrawal its sender may still reverse it (admins: unlimited)
     user-window-minutes: ${REVERSAL_USER_WINDOW_MINUTES:30}
+  idempotency:
+    # How long an Idempotency-Key is remembered. A retry after this window is processed again.
+    retention-hours: ${IDEMPOTENCY_RETENTION_HOURS:24}
 
 jwt:
-  secret: ${JWT_SECRET:404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}
-  expiration: 86400000 # 24 hours
+  # No default on purpose: the application refuses to start without JWT_SECRET
+  # (at least 64 characters, required by HS512). Generate one with: openssl rand -hex 32
+  secret: ${JWT_SECRET}
+  expiration: ${JWT_EXPIRATION_MS:7200000} # 2 hours
 
 logging:
   level:
-    com.finpay: DEBUG
+    com.finpay: INFO
     org.springframework.security: INFO
-    org.hibernate.SQL: DEBUG
-    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
 
 server:
   port: ${PORT:8080}

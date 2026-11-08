@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useWallet } from '../../hooks/useWallet';
 import { transactionService } from '../../services/auth';
@@ -22,6 +22,7 @@ import * as yup from 'yup';
 import CurrencyInput from 'react-currency-input-field';
 import { toast } from 'react-toastify';
 import { formatCurrency } from '../../utils/currencyFormatter';
+import { createIdempotencyKeyTracker } from '../../utils/idempotency';
 
 const schema = yup.object({
   destinationWalletId: yup.string().required('Destination wallet ID is required'),
@@ -39,6 +40,9 @@ const TransferForm = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [activeStep, setActiveStep] = useState(0);
+  // One Idempotency-Key per logical transfer: pressing "Transfer" again after a timeout or an
+  // error re-sends the SAME key, so the backend can never debit the wallet twice.
+  const idempotencyKeys = useRef(createIdempotencyKeyTracker());
 
   const { register, handleSubmit, formState: { errors }, setValue, watch } = useForm({
     resolver: yupResolver(schema),
@@ -68,7 +72,8 @@ const TransferForm = () => {
         description: data.description || 'Transfer',
       };
 
-      await transactionService.transfer(transferData);
+      await transactionService.transfer(transferData, idempotencyKeys.current.keyFor(transferData));
+      idempotencyKeys.current.reset();
       setSuccess(true);
       setActiveStep(1);
       await refreshBalance();

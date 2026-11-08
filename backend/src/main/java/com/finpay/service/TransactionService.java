@@ -2,6 +2,7 @@ package com.finpay.service;
 
 import com.finpay.dto.request.DepositRequest;
 import com.finpay.dto.request.TransferRequest;
+import com.finpay.dto.request.WithdrawRequest;
 import com.finpay.dto.response.BalanceResponse;
 import com.finpay.dto.response.TransactionResponse;
 import com.finpay.entity.Transaction;
@@ -21,6 +22,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -35,8 +37,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.TreeSet;
 import java.util.UUID;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -48,6 +52,7 @@ public class TransactionService {
     private final TransactionRepository transactionRepository;
     private final WalletRepository walletRepository;
     private final AuditService auditService;
+    private final IdempotencyService idempotencyService;
     private final TransactionTemplate transactionTemplate;
 
     /** How long after a transfer/withdrawal its sender may still reverse it without an admin. */
@@ -55,9 +60,9 @@ public class TransactionService {
     private long reversalUserWindowMinutes;
 
     // ------------------------------------------------------------------------------------
-    // Deposit / transfer
+    // Deposit / withdrawal / transfer
     //
-    // These two methods are intentionally NOT @Transactional. The money movement runs inside
+    // These methods are intentionally NOT @Transactional. The money movement runs inside
     // a programmatic transaction (TransactionTemplate); when a business rule rejects the
     // operation that transaction rolls back and ONLY THEN is a FAILED record written, in a
     // fresh transaction. Writing it inside the failing transaction would be rolled back with
@@ -68,24 +73,109 @@ public class TransactionService {
     // ------------------------------------------------------------------------------------
 
     public TransactionResponse deposit(DepositRequest request, HttpServletRequest httpRequest) {
+        return deposit(request, null, httpRequest);
+    }
+
+    public TransactionResponse deposit(DepositRequest request, String idempotencyKey, HttpServletRequest httpRequest) {
         log.info("Processing deposit of {} to wallet: {}", request.getAmount(), request.getWalletId());
-        try {
-            return transactionTemplate.execute(status -> doDeposit(request, httpRequest));
-        } catch (RejectedOperationException rejected) {
-            recordFailedAttempt(rejected, httpRequest);
-            throw rejected.getReason();
-        }
+        String hash = IdempotencyService.hash("DEPOSIT", request.getWalletId(),
+                canonical(request.getAmount()), nullToEmpty(request.getDescription()));
+        return executeMoneyMovement(idempotencyService.normalize(idempotencyKey), hash, httpRequest,
+                () -> doDeposit(request, httpRequest));
+    }
+
+    public TransactionResponse withdraw(WithdrawRequest request, HttpServletRequest httpRequest) {
+        return withdraw(request, null, httpRequest);
+    }
+
+    public TransactionResponse withdraw(WithdrawRequest request, String idempotencyKey, HttpServletRequest httpRequest) {
+        log.info("Processing withdrawal of {} from wallet: {}", request.getAmount(), request.getWalletId());
+        String hash = IdempotencyService.hash("WITHDRAWAL", request.getWalletId(),
+                canonical(request.getAmount()), nullToEmpty(request.getDescription()));
+        return executeMoneyMovement(idempotencyService.normalize(idempotencyKey), hash, httpRequest,
+                () -> doWithdraw(request, httpRequest));
     }
 
     public TransactionResponse transfer(TransferRequest request, HttpServletRequest httpRequest) {
+        return transfer(request, null, httpRequest);
+    }
+
+    public TransactionResponse transfer(TransferRequest request, String idempotencyKey, HttpServletRequest httpRequest) {
         log.info("Processing transfer of {} from wallet {} to wallet {}",
                 request.getAmount(), request.getSourceWalletId(), request.getDestinationWalletId());
+        String hash = IdempotencyService.hash("TRANSFER", request.getSourceWalletId(),
+                request.getDestinationWalletId(), canonical(request.getAmount()),
+                nullToEmpty(request.getDescription()));
+        return executeMoneyMovement(idempotencyService.normalize(idempotencyKey), hash, httpRequest,
+                () -> doTransfer(request, httpRequest));
+    }
+
+    /**
+     * Runs a money movement in its own database transaction and, when the client sent an
+     * Idempotency-Key, makes the movement exactly-once:
+     * <ul>
+     *   <li>a known key + same payload returns the stored result without moving anything;</li>
+     *   <li>the key is stored INSIDE the money-moving transaction, so "moved" and "remembered"
+     *       commit or roll back together;</li>
+     *   <li>two simultaneous requests with the same key serialize on the wallet lock, the loser
+     *       then hits the unique constraint, rolls back, and returns the winner's result.</li>
+     * </ul>
+     */
+    private TransactionResponse executeMoneyMovement(String key, String requestHash,
+                                                     HttpServletRequest httpRequest,
+                                                     Supplier<TransactionResponse> operation) {
+        if (key != null) {
+            Optional<TransactionResponse> replay = findReplay(key, requestHash);
+            if (replay.isPresent()) {
+                log.info("Idempotent replay for key {}: returning stored result", key);
+                return replay.get();
+            }
+        }
+
         try {
-            return transactionTemplate.execute(status -> doTransfer(request, httpRequest));
+            return transactionTemplate.execute(status -> {
+                TransactionResponse response = operation.get();
+                if (key != null) {
+                    idempotencyService.remember(key, requestHash, response.getId());
+                }
+                return response;
+            });
         } catch (RejectedOperationException rejected) {
+            // A concurrent duplicate may have succeeded first and changed the balance under us:
+            // the client must then see that success, not an "insufficient balance" error.
+            if (key != null) {
+                Optional<TransactionResponse> replay = findReplay(key, requestHash);
+                if (replay.isPresent()) {
+                    return replay.get();
+                }
+            }
             recordFailedAttempt(rejected, httpRequest);
             throw rejected.getReason();
+        } catch (DataIntegrityViolationException duplicate) {
+            // Lost the race on the idempotency unique constraint: our movement was rolled back.
+            if (key != null) {
+                Optional<TransactionResponse> replay = findReplay(key, requestHash);
+                if (replay.isPresent()) {
+                    return replay.get();
+                }
+            }
+            throw duplicate;
         }
+    }
+
+    private Optional<TransactionResponse> findReplay(String key, String requestHash) {
+        return transactionTemplate.execute(status ->
+                idempotencyService.findCompletedTransactionId(key, requestHash)
+                        .flatMap(transactionRepository::findById)
+                        .map(this::convertToResponse));
+    }
+
+    private static String canonical(BigDecimal amount) {
+        return amount.stripTrailingZeros().toPlainString();
+    }
+
+    private static String nullToEmpty(String value) {
+        return value == null ? "" : value;
     }
 
     private TransactionResponse doDeposit(DepositRequest request, HttpServletRequest httpRequest) {
@@ -198,6 +288,49 @@ public class TransactionService {
                 String.format("Transfer from %s to %s", sourceWallet.getId(), destinationWallet.getId()));
 
         log.info("Transfer completed successfully. Transaction ID: {}", transaction.getId());
+
+        return convertToResponse(transaction);
+    }
+
+    private TransactionResponse doWithdraw(WithdrawRequest request, HttpServletRequest httpRequest) {
+        Wallet wallet = walletRepository.findByIdWithLock(request.getWalletId())
+                .orElseThrow(() -> new WalletNotFoundException("Wallet not found: " + request.getWalletId()));
+
+        // Only the owner (or an admin) can take money out of a wallet.
+        SecurityUtil.checkOwnerOrAdmin(ownerId(wallet));
+
+        BigDecimal balanceBefore = wallet.getBalance();
+
+        try {
+            requireActive(wallet, "Wallet is not active");
+            wallet.debit(request.getAmount());
+        } catch (InsufficientBalanceException | IllegalStateException e) {
+            throw new RejectedOperationException(e, TransactionType.WITHDRAWAL, request.getAmount(),
+                    request.getDescription(), wallet.getId(), null);
+        }
+
+        wallet = walletRepository.save(wallet);
+
+        Transaction transaction = Transaction.builder()
+                .transactionId(generateTransactionId())
+                .amount(request.getAmount())
+                .type(TransactionType.WITHDRAWAL)
+                .status(TransactionStatus.COMPLETED)
+                .description(request.getDescription() != null ? request.getDescription() : "Withdrawal")
+                .currency(wallet.getCurrency())
+                .sourceWallet(wallet)
+                .balanceBefore(balanceBefore)
+                .balanceAfter(wallet.getBalance())
+                .ipAddress(RequestUtil.getClientIp(httpRequest))
+                .userAgent(RequestUtil.getUserAgent(httpRequest))
+                .build();
+
+        transaction = transactionRepository.save(transaction);
+
+        auditService.logAction("WITHDRAWAL", "Transaction", transaction.getId(),
+                null, transaction.getAmount().toString(), "Withdrawal completed");
+
+        log.info("Withdrawal completed successfully. Transaction ID: {}", transaction.getId());
 
         return convertToResponse(transaction);
     }
@@ -523,7 +656,7 @@ public class TransactionService {
     }
 
     /**
-     * Internal signal: a deposit/transfer was rejected by a business rule AFTER ownership was
+     * Internal signal: a deposit/withdrawal/transfer was rejected by a business rule AFTER ownership was
      * verified. It rolls back the money-movement transaction and carries what is needed to
      * write the FAILED ledger entry; the public methods unwrap it and rethrow the original
      * exception, so it never reaches the exception handler.

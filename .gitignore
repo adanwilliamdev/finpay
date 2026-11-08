@@ -1,0 +1,15 @@
+# Build output
+backend/target/
+frontend/build/
+frontend/node_modules/
+
+# Secrets (copy .env.example to .env). Only the repository root .env is ignored:
+# frontend/.env holds non-secret REACT_APP_* settings the build needs.
+/.env
+
+# IDEs / OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+*.log

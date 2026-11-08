@@ -99,6 +99,19 @@ public class GlobalExceptionHandler {
 
     // Business-state violations (wallet not active, transaction already reversed, ...)
     // used to fall through to the generic handler and surface as a misleading HTTP 500.
+    @ExceptionHandler(IdempotencyConflictException.class)
+    public ResponseEntity<ErrorResponse> handleIdempotencyConflictException(IdempotencyConflictException ex, WebRequest request) {
+        log.warn("Idempotency conflict: {}", ex.getMessage());
+        ErrorResponse error = new ErrorResponse(
+                LocalDateTime.now(),
+                HttpStatus.UNPROCESSABLE_ENTITY.value(),
+                "Idempotency Key Conflict",
+                ex.getMessage(),
+                request.getDescription(false)
+        );
+        return new ResponseEntity<>(error, HttpStatus.UNPROCESSABLE_ENTITY);
+    }
+
     @ExceptionHandler(IllegalStateException.class)
     public ResponseEntity<ErrorResponse> handleIllegalStateException(IllegalStateException ex, WebRequest request) {
         log.warn("Illegal state: {}", ex.getMessage());

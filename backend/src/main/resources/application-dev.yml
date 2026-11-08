@@ -4,7 +4,7 @@ spring:
     username: finpay_user
     password: finpay_password
   jpa:
-    show-sql: true
+    show-sql: false
     properties:
       hibernate:
         format_sql: true
@@ -17,15 +17,17 @@ finpay:
     demo-users: true
 
 jwt:
-  secret: devSecretKeyForTestingOnly12345678901234567890
+  # Development only. HS512 needs a key of at least 64 bytes (the previous dev key had 46
+  # and would have made token generation fail with a WeakKeyException).
+  secret: dev-only-secret-key-do-not-use-in-production-0123456789abcdef0123456789abcdef
   expiration: 86400000
 
 logging:
   level:
     com.finpay: DEBUG
     org.springframework.security: DEBUG
-    org.hibernate: DEBUG
-    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+    org.hibernate.SQL: DEBUG
+    org.hibernate.orm.jdbc.bind: TRACE
 
 server:
   port: 8080

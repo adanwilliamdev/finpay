@@ -10,6 +10,8 @@ import com.finpay.repository.UserRepository;
 import com.finpay.repository.WalletRepository;
 import com.finpay.security.JwtTokenProvider;
 import com.finpay.security.SecurityUtil;
+import com.finpay.security.TokenBlacklist;
+import io.jsonwebtoken.Claims;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -34,6 +36,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider tokenProvider;
     private final AuditService auditService;
+    private final TokenBlacklist tokenBlacklist;
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
@@ -120,11 +123,25 @@ public class AuthService {
                 .build();
     }
 
-    public void logout(String token) {
+    /**
+     * Revokes the presented token (by its jti) until it would have expired anyway, so it
+     * stops working immediately instead of living out its full lifetime.
+     */
+    public void logout(String authorizationHeader) {
         log.info("Logout attempt");
-        // Stateless JWT: the token itself is not invalidated server-side (see README roadmap),
-        // we only record who logged out. The JWT filter has already populated the security
-        // context if the token is valid; otherwise the entry is attributed to SYSTEM.
+
+        String token = authorizationHeader;
+        if (token != null && token.startsWith("Bearer ")) {
+            token = token.substring(7);
+        }
+
+        if (token != null && !token.isBlank() && tokenProvider.validateToken(token)) {
+            Claims claims = tokenProvider.parseClaims(token);
+            tokenBlacklist.revoke(claims.getId(), claims.getExpiration().toInstant());
+        }
+
+        // The JWT filter has already populated the security context if the token was valid;
+        // otherwise the entry is attributed to SYSTEM.
         String userId = SecurityUtil.getCurrentUserIdOrNull();
         auditService.logAction("LOGOUT", "User", userId, null, null, "User logged out");
     }

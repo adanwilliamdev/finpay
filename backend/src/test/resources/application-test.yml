@@ -1,0 +1,22 @@
+# Used by the integration tests (profile "test"). The datasource comes from Testcontainers.
+spring:
+  datasource:
+    hikari:
+      maximum-pool-size: 20
+  jpa:
+    show-sql: false
+
+finpay:
+  seed:
+    demo-users: false
+  reversal:
+    user-window-minutes: 30
+
+jwt:
+  secret: test-only-secret-key-0123456789abcdef0123456789abcdef0123456789abcdef
+  expiration: 3600000
+
+logging:
+  level:
+    com.finpay: WARN
+    org.springframework.security: WARN

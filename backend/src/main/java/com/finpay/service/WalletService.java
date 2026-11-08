@@ -12,7 +12,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -25,6 +24,7 @@ public class WalletService {
     private final UserRepository userRepository;
     private final AuditService auditService;
 
+    @Transactional(readOnly = true)
     public WalletResponse getWalletById(String walletId) {
         Wallet wallet = walletRepository.findById(walletId)
                 .orElseThrow(() -> new WalletNotFoundException("Wallet not found: " + walletId));
@@ -35,6 +35,7 @@ public class WalletService {
         return convertToResponse(wallet);
     }
 
+    @Transactional(readOnly = true)
     public WalletResponse getWalletByUserId(String userId) {
         // Only the owner themselves (or an admin) can look up a wallet by user id
         SecurityUtil.checkOwnerOrAdmin(userId);
@@ -44,6 +45,7 @@ public class WalletService {
         return convertToResponse(wallet);
     }
 
+    @Transactional(readOnly = true)
     public List<WalletResponse> getAllWallets() {
         return walletRepository.findAll().stream()
                 .map(this::convertToResponse)
@@ -86,20 +88,6 @@ public class WalletService {
                 "BLOCKED", "ACTIVE", "Wallet activated");
 
         return convertToResponse(wallet);
-    }
-
-    @Transactional
-    public void updateBalance(String walletId, BigDecimal amount) {
-        Wallet wallet = walletRepository.findByIdWithLock(walletId)
-                .orElseThrow(() -> new WalletNotFoundException("Wallet not found: " + walletId));
-
-        if (amount.compareTo(BigDecimal.ZERO) > 0) {
-            wallet.credit(amount);
-        } else if (amount.compareTo(BigDecimal.ZERO) < 0) {
-            wallet.debit(amount.abs());
-        }
-
-        walletRepository.save(wallet);
     }
 
     private WalletResponse convertToResponse(Wallet wallet) {

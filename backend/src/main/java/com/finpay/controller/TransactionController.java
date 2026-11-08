@@ -2,6 +2,7 @@ package com.finpay.controller;
 
 import com.finpay.dto.request.DepositRequest;
 import com.finpay.dto.request.TransferRequest;
+import com.finpay.dto.request.WithdrawRequest;
 import com.finpay.dto.response.BalanceResponse;
 import com.finpay.dto.response.TransactionResponse;
 import com.finpay.service.TransactionService;
@@ -21,16 +22,33 @@ public class TransactionController {
 
     private final TransactionService transactionService;
 
+    /**
+     * Money-moving endpoints accept an optional {@code Idempotency-Key} header (max 100 chars).
+     * Retrying with the same key and payload returns the original result instead of moving
+     * money again; the same key with a different payload returns 422.
+     */
     @PostMapping("/deposit")
-    public ResponseEntity<TransactionResponse> deposit(@Valid @RequestBody DepositRequest request,
-                                                       HttpServletRequest httpRequest) {
-        return ResponseEntity.ok(transactionService.deposit(request, httpRequest));
+    public ResponseEntity<TransactionResponse> deposit(
+            @Valid @RequestBody DepositRequest request,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            HttpServletRequest httpRequest) {
+        return ResponseEntity.ok(transactionService.deposit(request, idempotencyKey, httpRequest));
+    }
+
+    @PostMapping("/withdraw")
+    public ResponseEntity<TransactionResponse> withdraw(
+            @Valid @RequestBody WithdrawRequest request,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            HttpServletRequest httpRequest) {
+        return ResponseEntity.ok(transactionService.withdraw(request, idempotencyKey, httpRequest));
     }
 
     @PostMapping("/transfer")
-    public ResponseEntity<TransactionResponse> transfer(@Valid @RequestBody TransferRequest request,
-                                                        HttpServletRequest httpRequest) {
-        return ResponseEntity.ok(transactionService.transfer(request, httpRequest));
+    public ResponseEntity<TransactionResponse> transfer(
+            @Valid @RequestBody TransferRequest request,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            HttpServletRequest httpRequest) {
+        return ResponseEntity.ok(transactionService.transfer(request, idempotencyKey, httpRequest));
     }
 
     @GetMapping("/wallet/{walletId}")

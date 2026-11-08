@@ -32,9 +32,11 @@ O projeto foi desenvolvido com atenção especial à **integridade dos dados fin
 - Ledger para registro e rastreabilidade de operações financeiras.
 - Controle de concorrência com bloqueios pessimistas e otimistas.
 - Reversão de transações com validação de regras de negócio.
+- Idempotência (`Idempotency-Key`) em depósitos, saques e transferências.
 - Auditoria de operações e rastreamento de falhas.
 - Versionamento do banco de dados com Flyway.
 - Documentação da API com Swagger/OpenAPI.
+- Testes de integração com PostgreSQL real (Testcontainers), incluindo cenários de concorrência, e CI com GitHub Actions.
 
 ---
 
@@ -86,7 +88,7 @@ O projeto foi desenvolvido com atenção especial à **integridade dos dados fin
 
 - Cadastro e gerenciamento de usuários.
 - Criação e gerenciamento de carteiras digitais.
-- Depósitos em carteiras.
+- Depósitos e saques em carteiras.
 - Transferências entre usuários.
 - Consulta de saldo.
 - Histórico completo de transações.
@@ -103,7 +105,9 @@ O projeto foi desenvolvido com atenção especial à **integridade dos dados fin
 
 ### 🔐 Segurança
 
-- Autenticação utilizando JWT.
+- Autenticação utilizando JWT (expiração padrão de 2 horas, configurável).
+- Logout com revogação do token no servidor (`jti`).
+- A aplicação não inicia sem um `JWT_SECRET` válido (mínimo de 64 caracteres, exigido pelo HS512).
 - Criptografia de senhas com BCrypt.
 - Controle de acesso por perfil (ADMIN e USER).
 - Configuração de CORS.
@@ -177,6 +181,20 @@ Indicadores disponíveis:
 
 Os valores de transferências enviadas e recebidas são apresentados separadamente.
 
+### 6. Idempotência
+
+`POST /transactions/deposit`, `/withdraw` e `/transfer` aceitam o header opcional `Idempotency-Key` (até 100 caracteres).
+
+| Situação | Resultado |
+|---|---|
+| Primeira requisição com a chave | Processada normalmente; o resultado é guardado |
+| Repetição com a mesma chave e o mesmo corpo | Devolve o resultado original, **sem movimentar saldo de novo** |
+| Mesma chave com corpo diferente | `422 Unprocessable Entity` |
+| Requisições simultâneas com a mesma chave | Apenas uma movimenta o saldo; as demais recebem o mesmo resultado |
+| Operação rejeitada por regra de negócio | Não é guardada; o cliente pode tentar de novo com a mesma chave |
+
+Como funciona: a chave é gravada **na mesma transação de banco** que move o dinheiro (tabela `idempotency_keys`, única por usuário + chave). Se duas requisições disputam a mesma chave, a restrição de unicidade desfaz a segunda e ela devolve o resultado da primeira. As chaves são mantidas por 24h (`IDEMPOTENCY_RETENTION_HOURS`). O frontend já envia a chave nas transferências.
+
 ---
 
 ## 🏗️ Arquitetura do Projeto
@@ -186,23 +204,23 @@ finpay/
 │
 ├── backend/
 │   ├── src/
-│   │   └── main/
-│   │       ├── java/com/finpay/
-│   │       │   ├── config/
-│   │       │   ├── controller/
-│   │       │   ├── dto/
-│   │       │   ├── entity/
-│   │       │   ├── repository/
-│   │       │   ├── service/
-│   │       │   ├── security/
-│   │       │   └── exception/
-│   │       │
-│   │       └── resources/
-│   │           ├── application.yml
-│   │           └── db/migration/
-│   │
-│   ├── pom.xml
-│   └── mvnw
+│   │   ├── main/
+│   │   │   ├── java/com/finpay/
+│   │   │   │   ├── config/
+│   │   │   │   ├── controller/
+│   │   │   │   ├── dto/
+│   │   │   │   ├── entity/
+│   │   │   │   ├── repository/
+│   │   │   │   ├── service/
+│   │   │   │   ├── security/
+│   │   │   │   └── exception/
+│   │   │   └── resources/
+│   │   │       ├── application.yml
+│   │   │       └── db/migration/
+│   │   └── test/
+│   │       ├── java/com/finpay/        # testes unitários e de integração
+│   │       └── resources/application-test.yml
+│   └── pom.xml
 │
 ├── frontend/
 │   ├── public/
@@ -212,9 +230,10 @@ finpay/
 │   │   ├── hooks/
 │   │   ├── services/
 │   │   └── utils/
-│   │
 │   └── package.json
 │
+├── .github/workflows/ci.yml
+├── .env.example
 └── docker-compose.yml
 ```
 
@@ -224,10 +243,9 @@ finpay/
 
 ### Pré-requisitos
 
-- Docker
-- Docker Compose
-- Java 21
-- Node.js 18+
+- Docker e Docker Compose
+- Java 21 e Maven 3.9+ (para rodar o backend localmente)
+- Node.js 18+ (para rodar o frontend localmente)
 - PostgreSQL 15+ (para execução local)
 
 ### 🐳 Executando com Docker
@@ -244,13 +262,23 @@ git clone https://github.com/adanwilliamdev/finpay.git
 cd finpay
 ```
 
-**3. Inicie os containers**
+**3. Configure as variáveis de ambiente**
+
+O backend **não inicia sem `JWT_SECRET`** e o Compose exige `POSTGRES_PASSWORD`. Nenhum segredo fica versionado:
 
 ```bash
-docker-compose up -d
+cp .env.example .env
+# edite o .env: defina POSTGRES_PASSWORD e gere o JWT_SECRET com
+openssl rand -hex 32
 ```
 
-**4. Acesse a aplicação**
+**4. Inicie os containers**
+
+```bash
+docker compose up -d --build
+```
+
+**5. Acesse a aplicação**
 
 | Serviço | Endereço |
 |---|---|
@@ -275,12 +303,21 @@ ON DATABASE finpay
 TO finpay_user;
 ```
 
-Execute o backend:
+Execute o backend com o profile `dev` (já traz um `JWT_SECRET` de desenvolvimento, usuários demo e logs detalhados):
 
 ```bash
 cd backend
-./mvnw spring-boot:run
+mvn spring-boot:run -Dspring-boot.run.profiles=dev
 ```
+
+Sem o profile `dev`, defina as variáveis antes de subir:
+
+```bash
+export JWT_SECRET=$(openssl rand -hex 32)
+mvn spring-boot:run
+```
+
+> Para adicionar o Maven Wrapper ao projeto, rode `mvn wrapper:wrapper` dentro de `backend/` e versione os arquivos gerados.
 
 #### Frontend
 
@@ -291,6 +328,20 @@ cd frontend
 npm install
 npm start
 ```
+
+---
+
+## ⚙️ Variáveis de Ambiente
+
+| Variável | Obrigatória | Padrão | Descrição |
+|---|---|---|---|
+| `JWT_SECRET` | **Sim** | — | Chave de assinatura JWT (mínimo 64 caracteres) |
+| `DB_URL` / `DB_USER` / `DB_PASSWORD` | Não | `localhost` / `finpay_user` / `finpay_password` | Conexão com o PostgreSQL |
+| `JWT_EXPIRATION_MS` | Não | `7200000` (2h) | Validade do token |
+| `REVERSAL_USER_WINDOW_MINUTES` | Não | `30` | Janela para o remetente reverter uma operação |
+| `IDEMPOTENCY_RETENTION_HOURS` | Não | `24` | Por quanto tempo uma `Idempotency-Key` é lembrada |
+| `CORS_ALLOWED_ORIGINS` | Não | `http://localhost:3000,http://localhost:3001` | Origens permitidas, separadas por vírgula |
+| `SEED_DEMO_USERS` | Não | `false` | Cria as contas de demonstração |
 
 ---
 
@@ -335,7 +386,7 @@ Nunca habilite o seeder de demonstração em produção.
 |---|---|---|
 | `POST` | `/api/auth/register` | Registrar usuário |
 | `POST` | `/api/auth/login` | Realizar login |
-| `POST` | `/api/auth/logout` | Realizar logout |
+| `POST` | `/api/auth/logout` | Realizar logout (revoga o token) |
 
 ### 💳 Wallets
 
@@ -351,8 +402,9 @@ Nunca habilite o seeder de demonstração em produção.
 
 | Método | Endpoint | Descrição |
 |---|---|---|
-| `POST` | `/api/transactions/deposit` | Realizar depósito |
-| `POST` | `/api/transactions/transfer` | Realizar transferência |
+| `POST` | `/api/transactions/deposit` | Realizar depósito (aceita `Idempotency-Key`) |
+| `POST` | `/api/transactions/withdraw` | Realizar saque (aceita `Idempotency-Key`) |
+| `POST` | `/api/transactions/transfer` | Realizar transferência (aceita `Idempotency-Key`) |
 | `GET` | `/api/transactions/wallet/{walletId}` | Listar transações |
 | `GET` | `/api/transactions/wallet/{walletId}/balance` | Consultar saldo e indicadores |
 | `POST` | `/api/transactions/{id}/reverse` | Reverter transação |
@@ -365,26 +417,44 @@ Nunca habilite o seeder de demonstração em produção.
 
 ```bash
 cd backend
-./mvnw test
+mvn test      # ou: mvn verify
 ```
+
+Os **testes de integração usam PostgreSQL real via Testcontainers**, então precisam de Docker em execução. Sem Docker eles são ignorados (os unitários continuam rodando). Um mesmo container é reaproveitado por todas as classes de teste.
+
+| Teste | O que garante |
+|---|---|
+| `TransactionConcurrencyTest` | Transferências opostas simultâneas conservam o dinheiro e não geram deadlock; disputa por saldo nunca deixa a carteira negativa e registra as rejeições como `FAILED`; reversões simultâneas da mesma transação: só uma vence; retentativa com a mesma `Idempotency-Key` move o dinheiro uma vez só (inclusive em requisições simultâneas); regras de autorização de reversão, saque e transferência |
+| `TransactionApiTest` | Fluxo HTTP completo com a cadeia de segurança real: registro, JWT, logout revogando o token, `Idempotency-Key`, códigos 400/401/403/422 |
+| `WalletTest` | Regras de crédito/débito da entidade e ausência de recursão em `equals`/`hashCode` |
+| `JwtTokenProviderTest` / `TokenBlacklistTest` | Segredo fraco impede a inicialização, `jti` único por token, token adulterado/expirado rejeitado, revogação |
+| `IdempotencyServiceTest` | Normalização da chave e hash do corpo da requisição |
 
 ### Frontend
 
 ```bash
 cd frontend
-npm test
+npm test -- --watchAll=false
 ```
+
+### CI
+
+O workflow `.github/workflows/ci.yml` roda os testes do backend (com Docker/Testcontainers), os testes do frontend e o build do frontend a cada push e pull request.
 
 ---
 
 ## 🗺️ Melhorias Futuras
 
-- [ ] Implementação de Rate Limiting.
-- [ ] Idempotência de requisições financeiras.
+- [x] Idempotência de requisições financeiras.
+- [x] Testes de concorrência.
+- [x] Pipeline de CI (GitHub Actions).
+- [ ] Rate limiting (principalmente em `/auth/login`).
+- [ ] Refresh token (hoje o token dura 2h e é revogado apenas no logout).
+- [ ] Lista de tokens revogados em Redis (hoje é em memória: vale por instância e se perde ao reiniciar).
+- [ ] Deploy automatizado (CD).
 - [ ] Integração com serviços externos de pagamento.
 - [ ] Notificações de movimentações financeiras.
-- [ ] Testes de carga e concorrência.
-- [ ] Pipeline de CI/CD.
+- [ ] Testes de carga.
 
 ---
 

@@ -11,8 +11,6 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
-import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -50,7 +48,4 @@ public interface TransactionRepository extends JpaRepository<Transaction, String
 
     @Query("SELECT SUM(t.amount) FROM Transaction t WHERE t.destinationWallet.id = :walletId AND t.type = 'TRANSFER' AND t.status = 'COMPLETED'")
     BigDecimal sumTransfersReceivedByWallet(@Param("walletId") String walletId);
-
-    @Query("SELECT t FROM Transaction t WHERE t.createdAt BETWEEN :start AND :end")
-    List<Transaction> findByDateRange(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
 }

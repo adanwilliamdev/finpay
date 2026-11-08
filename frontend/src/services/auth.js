@@ -46,14 +46,24 @@ export const walletService = {
   }
 };
 
+// Money-moving calls accept an optional Idempotency-Key: retrying with the same key (and the
+// same payload) returns the original result instead of moving money twice.
+const idempotencyConfig = (idempotencyKey) =>
+  idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : undefined;
+
 export const transactionService = {
-  deposit: async (data) => {
-    const response = await api.post('/transactions/deposit', data);
+  deposit: async (data, idempotencyKey) => {
+    const response = await api.post('/transactions/deposit', data, idempotencyConfig(idempotencyKey));
     return response.data;
   },
 
-  transfer: async (data) => {
-    const response = await api.post('/transactions/transfer', data);
+  withdraw: async (data, idempotencyKey) => {
+    const response = await api.post('/transactions/withdraw', data, idempotencyConfig(idempotencyKey));
+    return response.data;
+  },
+
+  transfer: async (data, idempotencyKey) => {
+    const response = await api.post('/transactions/transfer', data, idempotencyConfig(idempotencyKey));
     return response.data;
   },
 

@@ -3,15 +3,15 @@ services:
     image: postgres:15-alpine
     container_name: finpay-postgres
     environment:
-      POSTGRES_DB: finpay
-      POSTGRES_USER: finpay_user
-      POSTGRES_PASSWORD: finpay_password
+      POSTGRES_DB: ${POSTGRES_DB:-finpay}
+      POSTGRES_USER: ${POSTGRES_USER:-finpay_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no arquivo .env (veja .env.example)}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U finpay_user -d finpay"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -23,10 +23,10 @@ services:
       context: ./backend
     container_name: finpay-backend
     environment:
-      DB_URL: jdbc:postgresql://postgres:5432/finpay
-      DB_USER: finpay_user
-      DB_PASSWORD: finpay_password
-      JWT_SECRET: 404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970
+      DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-finpay}
+      DB_USER: ${POSTGRES_USER:-finpay_user}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no arquivo .env (veja .env.example)}
+      JWT_SECRET: ${JWT_SECRET:?Defina JWT_SECRET no arquivo .env (veja .env.example)}
       PORT: 8080
       # Demo accounts (admin@finpay.com / user@finpay.com). Remove for any real deployment.
       SEED_DEMO_USERS: "true"

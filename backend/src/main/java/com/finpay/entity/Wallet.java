@@ -4,7 +4,8 @@ import com.finpay.exception.InsufficientBalanceException;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
@@ -15,7 +16,8 @@ import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "wallets")
-@Data
+@Getter
+@Setter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
@@ -30,13 +32,16 @@ public class Wallet {
     private String walletNumber;
 
     @Column(nullable = false)
+    @Builder.Default
     private BigDecimal balance = BigDecimal.ZERO;
 
     @Column(nullable = false)
+    @Builder.Default
     private String currency = "BRL";
 
     @Column(nullable = false)
     @Enumerated(EnumType.STRING)
+    @Builder.Default
     private WalletStatus status = WalletStatus.ACTIVE;
 
     @Version
@@ -72,5 +77,25 @@ public class Wallet {
             throw new InsufficientBalanceException("Insufficient balance");
         }
         this.balance = this.balance.subtract(amount);
+    }
+
+    /**
+     * Identity-based equality. {@code @Data} would include every field (and, through the
+     * User <-> Wallet association, recurse forever in hashCode/toString).
+     */
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof Wallet other)) {
+            return false;
+        }
+        return getId() != null && getId().equals(other.getId());
+    }
+
+    @Override
+    public int hashCode() {
+        return getClass().hashCode();
     }
 }

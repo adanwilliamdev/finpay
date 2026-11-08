@@ -61,9 +61,6 @@ public class DemoDataSeeder implements CommandLineRunner {
             return;
         }
 
-        // NOTE: the entities use Lombok @Builder without @Builder.Default, so every field
-        // must be set explicitly - field initializers (role = USER, balance = ZERO, ...) are
-        // ignored by the builder.
         User user = userRepository.save(User.builder()
                 .email(email)
                 .password(passwordEncoder.encode(rawPassword))
