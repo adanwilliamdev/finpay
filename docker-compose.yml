@@ -30,6 +30,8 @@ services:
       PORT: 8080
       # Demo accounts (admin@finpay.com / user@finpay.com). Remove for any real deployment.
       SEED_DEMO_USERS: "true"
+      # Traffic arrives through the bundled nginx, which appends the real client IP to X-Forwarded-For.
+      RATE_LIMIT_TRUST_FORWARDED_FOR: "true"
     ports:
       - "8080:8080"
     depends_on:

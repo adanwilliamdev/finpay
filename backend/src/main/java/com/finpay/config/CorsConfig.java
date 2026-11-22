@@ -23,6 +23,8 @@ public class CorsConfig {
         config.setAllowedOrigins(allowedOrigins);
         config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "X-Requested-With", "Idempotency-Key"));
+        // Lets the frontend read how long to wait after a 429.
+        config.setExposedHeaders(Arrays.asList("Retry-After"));
         config.setAllowCredentials(true);
         config.setMaxAge(3600L);
 

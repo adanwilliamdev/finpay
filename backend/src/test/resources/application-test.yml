@@ -11,6 +11,9 @@ finpay:
     demo-users: false
   reversal:
     user-window-minutes: 30
+  rate-limit:
+    # Integration tests register many users from the same (mock) IP.
+    enabled: false
 
 jwt:
   secret: test-only-secret-key-0123456789abcdef0123456789abcdef0123456789abcdef

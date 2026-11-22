@@ -43,6 +43,15 @@ axiosInstance.interceptors.response.use(
         case 403:
           toast.error('You do not have permission to perform this action');
           break;
+        case 429: {
+          // Rate limited (login/register). Not an auth failure: keep the session, show the wait.
+          const retryAfter = response.headers?.['retry-after'];
+          toast.error(
+            response.data?.message ||
+              `Too many attempts. Try again in ${retryAfter || 'a few'} seconds.`
+          );
+          break;
+        }
         case 404:
           toast.error('Resource not found');
           break;

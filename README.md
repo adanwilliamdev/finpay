@@ -159,6 +159,10 @@ Por padrão, usuários comuns possuem uma janela de reversão de 30 minutos, con
 
 Rejeições por regras de negócio retornam `409 Conflict`, enquanto operações sem autorização retornam `403 Forbidden`.
 
+### 3.1 Rate limiting
+
+`POST /auth/login` (10/min por IP) e `POST /auth/register` (5/h por IP) são limitados por uma janela fixa em memória. Acima do limite a requisição nem chega ao controller: `429 Too Many Requests` com o header `Retry-After`. O IP vem de `getRemoteAddr()`; `X-Forwarded-For` só é considerado com `RATE_LIMIT_TRUST_FORWARDED_FOR=true` e, nesse caso, usa-se o **último** salto (o acrescentado pelo seu proxy), porque os anteriores podem ser forjados pelo cliente. Limitação: o estado é por instância e zera ao reiniciar; com várias réplicas, mover para Redis.
+
 ### 4. Auditoria e integridade
 
 - Registro de operações financeiras.
@@ -342,6 +346,10 @@ npm start
 | `IDEMPOTENCY_RETENTION_HOURS` | Não | `24` | Por quanto tempo uma `Idempotency-Key` é lembrada |
 | `CORS_ALLOWED_ORIGINS` | Não | `http://localhost:3000,http://localhost:3001` | Origens permitidas, separadas por vírgula |
 | `SEED_DEMO_USERS` | Não | `false` | Cria as contas de demonstração |
+| `RATE_LIMIT_ENABLED` | Não | `true` | Liga/desliga o rate limiting de login e registro |
+| `RATE_LIMIT_LOGIN_MAX` / `RATE_LIMIT_LOGIN_WINDOW_SECONDS` | Não | `10` / `60` | Tentativas de login por IP na janela |
+| `RATE_LIMIT_REGISTER_MAX` / `RATE_LIMIT_REGISTER_WINDOW_SECONDS` | Não | `5` / `3600` | Cadastros por IP na janela |
+| `RATE_LIMIT_TRUST_FORWARDED_FOR` | Não | `false` | Usa o último salto de `X-Forwarded-For` como IP do cliente (só atrás de proxy confiável; o Compose já ativa) |
 
 ---
 
@@ -429,6 +437,7 @@ Os **testes de integração usam PostgreSQL real via Testcontainers**, então pr
 | `WalletTest` | Regras de crédito/débito da entidade e ausência de recursão em `equals`/`hashCode` |
 | `JwtTokenProviderTest` / `TokenBlacklistTest` | Segredo fraco impede a inicialização, `jti` único por token, token adulterado/expirado rejeitado, revogação |
 | `IdempotencyServiceTest` | Normalização da chave e hash do corpo da requisição |
+| `RateLimiterTest` / `RateLimitFilterTest` | Janela, reset, concorrência (exatamente N permitidas), 429 + `Retry-After`, escolha do IP do cliente e rotas não afetadas (não precisam de Docker) |
 
 ### Frontend
 
@@ -448,7 +457,7 @@ O workflow `.github/workflows/ci.yml` roda os testes do backend (com Docker/Test
 - [x] Idempotência de requisições financeiras.
 - [x] Testes de concorrência.
 - [x] Pipeline de CI (GitHub Actions).
-- [ ] Rate limiting (principalmente em `/auth/login`).
+- [x] Rate limiting em `/auth/login` e `/auth/register` (em memória, por instância).
 - [ ] Refresh token (hoje o token dura 2h e é revogado apenas no logout).
 - [ ] Lista de tokens revogados em Redis (hoje é em memória: vale por instância e se perde ao reiniciar).
 - [ ] Deploy automatizado (CD).
