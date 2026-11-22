@@ -35,11 +35,21 @@ axiosInstance.interceptors.response.use(
     if (response) {
       // Handle specific status codes
       switch (response.status) {
-        case 401:
+        case 401: {
+          // A wrong password on the login/register form is also a 401, but it is not an expired
+          // session: show the server's message and stay on the page instead of reloading it.
+          const url = error.config?.url || '';
+          if (url.includes('/auth/login') || url.includes('/auth/register')) {
+            toast.error(response.data?.message || 'Invalid email or password');
+            break;
+          }
           localStorage.removeItem(process.env.REACT_APP_TOKEN_KEY);
-          window.location.href = '/login';
           toast.error('Session expired. Please login again.');
+          if (window.location.pathname !== '/login') {
+            window.location.href = '/login';
+          }
           break;
+        }
         case 403:
           toast.error('You do not have permission to perform this action');
           break;

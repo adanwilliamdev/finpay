@@ -61,3 +61,22 @@ jobs:
         run: npm run build
         env:
           CI: 'false'
+
+  docker:
+    name: Docker images build
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate compose file
+        run: docker compose config -q
+        env:
+          POSTGRES_PASSWORD: ci-password
+          JWT_SECRET: ci-secret-ci-secret-ci-secret-ci-secret-ci-secret-ci-secret-1234
+
+      - name: Build backend image
+        run: docker build -t finpay-backend ./backend
+
+      - name: Build frontend image
+        run: docker build -t finpay-frontend ./frontend

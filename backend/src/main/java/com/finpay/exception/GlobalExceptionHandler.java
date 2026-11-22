@@ -2,6 +2,14 @@ package com.finpay.exception;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.authentication.AccountStatusException;
+import org.springframework.security.authentication.DisabledException;
+import org.springframework.security.authentication.LockedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.web.bind.MissingRequestHeaderException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -191,6 +199,43 @@ public class GlobalExceptionHandler {
                 request.getDescription(false)
         );
         return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
+    }
+
+    // Login against a disabled / locked account: DaoAuthenticationProvider throws these, and they
+    // used to fall through to the generic handler as a misleading HTTP 500.
+    @ExceptionHandler({DisabledException.class, LockedException.class})
+    public ResponseEntity<ErrorResponse> handleAccountStatusException(AccountStatusException ex, WebRequest request) {
+        log.warn("Login rejected, account not usable: {}", ex.getClass().getSimpleName());
+        return build(HttpStatus.FORBIDDEN, "Account Unavailable",
+                "This account is disabled or locked. Please contact support.", request);
+    }
+
+    // Unique-constraint races (e.g. two simultaneous registrations with the same e-mail) are a
+    // client conflict, not a server failure. The SQL message is never echoed to the client.
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponse> handleDataIntegrityViolation(DataIntegrityViolationException ex, WebRequest request) {
+        log.warn("Data integrity violation: {}", ex.getMostSpecificCause().getMessage());
+        return build(HttpStatus.CONFLICT, "Conflict",
+                "The request conflicts with existing data. Please retry.", request);
+    }
+
+    // Malformed JSON, wrong parameter types, missing headers and wrong HTTP verbs are client
+    // errors; previously all of them were reported as HTTP 500.
+    @ExceptionHandler({HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class,
+            MissingRequestHeaderException.class})
+    public ResponseEntity<ErrorResponse> handleMalformedRequest(Exception ex, WebRequest request) {
+        log.warn("Malformed request: {}", ex.getMessage());
+        return build(HttpStatus.BAD_REQUEST, "Bad Request", "Malformed or invalid request.", request);
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ErrorResponse> handleMethodNotSupported(HttpRequestMethodNotSupportedException ex, WebRequest request) {
+        return build(HttpStatus.METHOD_NOT_ALLOWED, "Method Not Allowed", ex.getMessage(), request);
+    }
+
+    private static ResponseEntity<ErrorResponse> build(HttpStatus status, String error, String message, WebRequest request) {
+        return new ResponseEntity<>(new ErrorResponse(LocalDateTime.now(), status.value(), error, message,
+                request.getDescription(false)), status);
     }
 
     @ExceptionHandler(Exception.class)

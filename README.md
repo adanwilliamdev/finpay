@@ -289,6 +289,7 @@ docker compose up -d --build
 | Frontend | http://localhost:3000 |
 | Backend API | http://localhost:8080/api |
 | Swagger UI | http://localhost:8080/api/swagger-ui.html |
+| Health check | http://localhost:8080/api/actuator/health |
 
 ### 💻 Executando localmente
 
@@ -507,3 +508,15 @@ Este projeto está licenciado sob a **MIT License**.
   &nbsp;•&nbsp;
   <a href="https://adanwilliamdev.github.io/">Portfólio</a>
 </p>
+
+---
+
+## 🛡️ Notas de endurecimento
+
+- **Erros HTTP corretos:** JSON malformado, parâmetro com tipo errado, verbo HTTP inválido e conflito de unicidade agora respondem 400/405/409 (antes, 500). Login em conta desativada/bloqueada responde 403.
+- **Paginação limitada:** `size` máximo de 100 por página (`spring.data.web.pageable.max-page-size`).
+- **Health check:** `GET /api/actuator/health` (somente `health` exposto); usado pelos healthchecks do Docker e pelo `depends_on` do Compose.
+- **Contêineres:** backend roda como usuário não-root, heap dimensionado pelo limite do contêiner, *graceful shutdown*; PostgreSQL publicado apenas em `127.0.0.1`; nginx com cabeçalhos de segurança (`nosniff`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`).
+- **Swagger:** defina `SWAGGER_ENABLED=false` para ocultar a documentação em produção.
+- **Frontend:** senha errada no login não é mais tratada como "sessão expirada" (sem recarregar a página).
+- **Dependabot** semanal (Maven/npm) e job de build das imagens Docker no CI.
